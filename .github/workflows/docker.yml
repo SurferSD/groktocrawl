@@ -204,6 +204,24 @@ jobs:
               raise RuntimeError('Timed out waiting for tier3-fixture')
           "
 
+      - name: Wait for test-site
+        run: |
+          python3 -c "
+          import time, urllib.request
+          deadline = time.time() + 60
+          while time.time() < deadline:
+              try:
+                  r = urllib.request.urlopen('http://localhost:8000/health', timeout=5)
+                  if r.status == 200:
+                      print('test-site healthy')
+                      break
+              except Exception:
+                  pass
+              time.sleep(2)
+          else:
+              raise RuntimeError('Timed out waiting for test-site')
+          "
+
       - name: Run integration tests
         run: |
           docker compose exec -T agent-svc pip install pytest -q
