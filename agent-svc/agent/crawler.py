@@ -167,7 +167,7 @@ class CrawlOptions:
             on every page fetch.
     """
 
-    max_pages: int = 10
+    max_pages: int = 0  # 0 = unlimited
     max_depth: int = 2
     include_paths: list[str] | None = None
     exclude_paths: list[str] | None = None
@@ -566,8 +566,10 @@ class CrawlEngine:
                 )
                 sitemap_urls = []
             if sitemap_urls:
-                # Truncate sitemap URLs to respect max_pages (reserve 1 for start URL)
-                remaining = self.options.max_pages - 1
+                # Truncate sitemap URLs only if max_pages is explicitly set
+                remaining = (
+                    self.options.max_pages - 1 if self.options.max_pages > 0 else -1
+                )
                 if remaining > 0:
                     sitemap_urls = sitemap_urls[:remaining]
                 sitemap_dedup: set[str] = set()
@@ -600,9 +602,16 @@ class CrawlEngine:
             self.options.delay,
         )
 
-        while (self._queue or self._pending_tasks) and len(
-            self._pages
-        ) < self.options.max_pages:
+        while self._queue or self._pending_tasks:
+            if (
+                self.options.max_pages > 0
+                and len(self._pages) >= self.options.max_pages
+            ):
+                logger.info(
+                    "Reached max_pages=%d — stopping crawl",
+                    self.options.max_pages,
+                )
+                break
             if self._cancel_flag:
                 logger.info("Crawl cancelled via cancel flag")
                 break
