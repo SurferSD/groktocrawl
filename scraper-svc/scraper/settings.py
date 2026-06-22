@@ -61,6 +61,16 @@ class ScraperSettings(BaseModel):
     recovery_llm_api_key: str = Field(default="", alias="LLM_API_KEY")
     recovery_llm_model: str = Field(default="gpt-4o-mini", alias="LLM_MODEL")
 
+    section_filter_default_include: str = Field(
+        default="", alias="SECTION_FILTER_DEFAULT_INCLUDE"
+    )
+    section_filter_default_exclude: str = Field(
+        default="", alias="SECTION_FILTER_DEFAULT_EXCLUDE"
+    )
+    section_filter_default_verbosity: str = Field(
+        default="standard", alias="SECTION_FILTER_DEFAULT_VERBOSITY"
+    )
+
     @field_validator("politeness_enabled", mode="before")
     @classmethod
     def parse_bool(cls, v: Any) -> bool:
