@@ -456,15 +456,15 @@ def extract_extras(html: str, options) -> dict:
     if options.links is not None and options.links > 0:
         links: list[str] = []
         for a in soup.find_all("a", href=True):
-            href: str = str(a["href"]).strip()  # type: ignore[arg-type]
+            href: str = str(a["href"]).strip()  # type: ignore
             # Skip non-web links
             if href.startswith(("mailto:", "javascript:", "tel:", "#")):
                 continue
             # Resolve relative URLs against base
-            resolved = href  # type: ignore[assignment]
+            resolved = href  # type: ignore
             if base_url:
                 with contextlib.suppress(Exception):
-                    resolved = urljoin(base_url, href)  # type: ignore[arg-type]
+                    resolved = urljoin(base_url, href)  # type: ignore
             # Deduplicate
             if resolved not in links:
                 links.append(resolved)
@@ -476,7 +476,7 @@ def extract_extras(html: str, options) -> dict:
     if options.imageLinks is not None and options.imageLinks > 0:
         images: list[str] = []
         for img in soup.find_all("img", src=True):
-            src: str = str(img["src"]).strip()  # type: ignore[arg-type]
+            src: str = str(img["src"]).strip()  # type: ignore
             if not src or src.startswith("data:"):
                 continue
             if src not in images:
