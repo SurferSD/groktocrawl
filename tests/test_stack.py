@@ -136,7 +136,9 @@ def test_metrics_endpoint_returns_openmetrics():
     assert "queue_depth" in body
 
 
-@pytest.mark.xfail(strict=False, reason="scraper cannot extract from minimal HTML test pages")
+@pytest.mark.xfail(
+    strict=False, reason="scraper cannot extract from minimal HTML test pages"
+)
 def test_scraper_uses_llms_txt():
     r = httpx.post(
         SCRAPER + "/scrape", json={"url": "https://example.com"}, timeout=120
@@ -147,7 +149,9 @@ def test_scraper_uses_llms_txt():
     assert "llms.txt entrypoint" in payload["data"]["markdown"]
 
 
-@pytest.mark.xfail(strict=False, reason="scraper cannot extract from minimal HTML test pages")
+@pytest.mark.xfail(
+    strict=False, reason="scraper cannot extract from minimal HTML test pages"
+)
 def test_scraper_uses_accept_markdown():
     # Disable llms.txt by targeting a page that doesn't match the llms.txt listing.
     r = httpx.post(
@@ -1468,6 +1472,36 @@ def test_enrich_single_company():
             },
             "source_hint": "company",
             "effort": "low",
+        },
+        timeout=120,
+    )
+    assert r.status_code == 200
+    payload = r.json()
+    assert payload["success"] is True
+    assert payload["items_enriched"] == 1
+    assert payload["fields_per_item"] == 2
+    assert payload["latency_ms"] > 0
+    assert isinstance(payload["data"], list)
+    assert len(payload["data"]) == 1
+
+    enriched = payload["data"][0]
+    assert "item" in enriched
+    assert enriched["item"] == {"company": "Anthropic"}
+    assert "enrichments" in enriched
+
+    enrichments = enriched["enrichments"]
+    assert "ceo" in enrichments
+    assert "headquarters" in enrichments
+    for field_name in ("ceo", "headquarters"):
+        field = enrichments[field_name]
+        assert "value" in field, f"Missing 'value' in {field_name}"
+        assert "source" in field, f"Missing 'source' in {field_name}"
+        if field["value"] is not None:
+            assert isinstance(field["value"], str)
+            assert isinstance(field["source"], str)
+            assert field["source"].startswith("http")
+
+
 # ── Richer content extraction tests ─────────────────────────────
 
 
@@ -1593,6 +1627,8 @@ def test_scrape_contents_default_unchanged():
     assert "url" in data
     # Extras should not appear when contents is not requested
     assert "extras" not in data
+
+
 # ═══════════════════════════════════════════════════════════════════
 # ── Crawl Integration Tests ──────────────────────────────────────
 # ═══════════════════════════════════════════════════════════════════
@@ -2317,31 +2353,24 @@ def test_crawl_agent_pipeline():
         timeout=120,
     )
     assert r.status_code == 200
-    payload = r.json()
-    assert payload["success"] is True
-    assert payload["items_enriched"] == 1
-    assert payload["fields_per_item"] == 2
-    assert payload["latency_ms"] > 0
-    assert isinstance(payload["data"], list)
-    assert len(payload["data"]) == 1
+    agent_id = r.json()["id"]
 
-    enriched = payload["data"][0]
-    assert "item" in enriched
-    assert enriched["item"] == {"company": "Anthropic"}
-    assert "enrichments" in enriched
+    # Poll agent to completion
+    deadline = time.time() + 120
+    while time.time() < deadline:
+        r = httpx.get(AGENT + f"/v2/agent/{agent_id}", timeout=10)
+        if r.status_code == 200:
+            payload = r.json()
+            if payload.get("status") in ("completed", "failed"):
+                break
+        time.sleep(2)
 
-    enrichments = enriched["enrichments"]
-    assert "ceo" in enrichments
-    assert "headquarters" in enrichments
-    # Fields should have the expected structure
-    for field_name in ("ceo", "headquarters"):
-        field = enrichments[field_name]
-        assert "value" in field, f"Missing 'value' in {field_name}"
-        assert "source" in field, f"Missing 'source' in {field_name}"
-        if field["value"] is not None:
-            assert isinstance(field["value"], str)
-            assert isinstance(field["source"], str)
-            assert field["source"].startswith("http")
+    logger.info(
+        "Crawl→agent pipeline: crawl_id=%s agent_id=%s result_status=%s",
+        job_id,
+        agent_id,
+        r.json().get("status"),
+    )
 
 
 def test_enrich_nonexistent_entity():
@@ -2409,24 +2438,6 @@ def test_enrich_multiple_items():
         field = enriched["enrichments"]["ceo"]
         assert "value" in field
         assert "source" in field
-    agent_id = r.json()["id"]
-
-    # Poll agent to completion
-    deadline = time.time() + 120
-    while time.time() < deadline:
-        r = httpx.get(AGENT + f"/v2/agent/{agent_id}", timeout=10)
-        if r.status_code == 200:
-            payload = r.json()
-            if payload.get("status") in ("completed", "failed"):
-                break
-        time.sleep(2)
-
-    logger.info(
-        "Crawl→agent pipeline: crawl_id=%s agent_id=%s result_status=%s",
-        job_id,
-        agent_id,
-        r.json().get("status"),
-    )
 
 
 # ── VAL-CROSS-040: Activity feed with mixed job types ────────────
