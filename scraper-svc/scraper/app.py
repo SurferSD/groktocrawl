@@ -5,6 +5,7 @@ Single endpoint: POST /scrape — takes a URL, returns clean markdown.
 
 import logging
 from contextlib import asynccontextmanager
+from enum import Enum
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
@@ -52,6 +53,35 @@ async def _probe_browser() -> bool:
     except Exception as exc:
         logger.warning("Playwright browser probe failed: %s", exc)
         return False
+
+
+class VerbosityLevel(str, Enum):
+    compact = "compact"       # ~300 chars of body text
+    standard = "standard"     # Current behavior (readability extraction)
+    full = "full"             # Complete page text including structural markup
+
+
+class SectionCategory(str, Enum):
+    header = "header"
+    navigation = "navigation"
+    banner = "banner"
+    body = "body"
+    sidebar = "sidebar"
+    footer = "footer"
+    metadata = "metadata"
+
+
+class ExtrasOptions(BaseModel):
+    links: int | None = None        # Max external links to extract
+    imageLinks: int | None = None   # Max image URLs to extract
+    codeBlocks: int | None = None   # Max code blocks to extract
+
+
+class ContentsOptions(BaseModel):
+    text: bool | dict | None = None          # True = full text, or dict with verbosity/sections
+    highlights: bool | dict | None = None    # True = auto highlights, or dict with query/maxCharacters
+    summary: bool | dict | None = None       # True = auto summary, or dict with query/maxTokens
+    extras: ExtrasOptions | None = None
 
 
 @asynccontextmanager
@@ -103,6 +133,7 @@ METRICS.counter("meta_calls_total", "Total meta requests", ["status"])
 
 class ScrapeRequest(BaseModel):
     url: str
+    contents: ContentsOptions | None = None  # Optional content extraction options
     force_browser: bool = False
     ignore_robots_txt: bool = False
     robots_user_agent: str | None = None
@@ -228,14 +259,78 @@ async def scrape(request: ScrapeRequest):
                 "scrape_calls_total", "Total scrape requests", ["status"]
             ).inc({"status": "error"})
             raise UpstreamError(detail=result["error"])
+        markdown = result.get("markdown", "")
+        raw_html = result.get("raw_html_start", "")
+
+        # ── Content extraction options (ADR pending) ─────────────
+        extras_data: dict | None = None
+        if request.contents:
+            # Section filtering and verbosity
+            if request.contents.text:
+                from .extract import filter_sections
+
+                text_opts: dict = (
+                    request.contents.text
+                    if isinstance(request.contents.text, dict)
+                    else {}
+                )
+                verbosity = text_opts.get("verbosity", "standard")
+                include_sections = text_opts.get("include")
+                exclude_sections = text_opts.get("exclude")
+
+                if raw_html and verbosity != "standard":
+                    markdown = filter_sections(
+                        raw_html,
+                        include=include_sections,
+                        exclude=exclude_sections,
+                        verbosity=verbosity,
+                    )
+                elif verbosity == "compact" and markdown:
+                    # Fallback: compact verbosity from markdown (no HTML needed)
+                    markdown = markdown[:300]
+                elif verbosity == "full" and raw_html:
+                    from .fetch import html_to_markdown
+
+                    # Full verbosity: bypass readability, render entire page
+                    from markdownify import markdownify as md
+
+                    soup: None = None
+                    try:
+                        from bs4 import BeautifulSoup as _BS
+
+                        soup = _BS(raw_html, "html.parser")
+                    except Exception:
+                        pass
+                    if soup:
+                        markdown = md(str(soup), heading_style="ATX", strip=[])
+                    else:
+                        markdown = html_to_markdown(raw_html)
+                elif include_sections or exclude_sections:
+                    if raw_html:
+                        markdown = filter_sections(
+                            raw_html,
+                            include=include_sections,
+                            exclude=exclude_sections,
+                            verbosity=verbosity,
+                        )
+
+            # Extras extraction
+            if request.contents.extras:
+                from .extract import extract_extras
+
+                if raw_html:
+                    extras_data = extract_extras(raw_html, request.contents.extras)
+
         data = {
-            "markdown": result.get("markdown", ""),
+            "markdown": markdown,
             "source": result.get("source", "unknown"),
             "url": request.url,
             "quality": result.get("quality"),
             "politeness": result.get("politeness"),
             "metadata": result.get("metadata"),
         }
+        if extras_data:
+            data["extras"] = extras_data
         if result.get("download"):
             data["download"] = result["download"]
         METRICS.counter("scrape_calls_total", "Total scrape requests", ["status"]).inc(
