@@ -302,7 +302,7 @@ async def cancel_agent(request: Request, job_id: str) -> AgentCancelResponse:
 @router.post("/v2/crawl", response_model=CrawlCreateResponse)
 async def create_crawl(
     request: Request, body: CrawlRequest, response: Response
-) -> CrawlCreateResponse:  # type: ignore[return-value]  # returns StreamingResponse when stream=True
+) -> CrawlCreateResponse:
     # ── Per-client rate limit check (VAL-CONC-047) ────────────
     client_ip = _get_client_ip(request)
     rate_limiter = request.app.state.rate_limiter
@@ -423,7 +423,7 @@ async def create_crawl(
             "Location": f"/v2/crawl/{job_id}/stream",
             "X-Accel-Buffering": "no",
         }
-        return StreamingResponse(
+        return StreamingResponse(  # type: ignore[return-value]
             event_stream(),
             media_type="text/event-stream",
             headers=sse_headers,
