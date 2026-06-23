@@ -994,3 +994,116 @@ def test_non_existent_browser_session_returns_404():
     data = r.json()
     assert data["success"] is False
     assert data["error_code"] == "NOT_FOUND"
+
+
+# ── Enrich endpoint tests ──────────────────────────────────────
+
+
+def test_enrich_single_company():
+    """POST /v2/enrich with a single company item returns populated fields."""
+    r = httpx.post(
+        AGENT + "/v2/enrich",
+        json={
+            "items": [{"company": "Anthropic"}],
+            "fields": {
+                "ceo": {"description": "CEO name"},
+                "headquarters": {"description": "Company headquarters location"},
+            },
+            "source_hint": "company",
+            "effort": "low",
+        },
+        timeout=120,
+    )
+    assert r.status_code == 200
+    payload = r.json()
+    assert payload["success"] is True
+    assert payload["items_enriched"] == 1
+    assert payload["fields_per_item"] == 2
+    assert payload["latency_ms"] > 0
+    assert isinstance(payload["data"], list)
+    assert len(payload["data"]) == 1
+
+    enriched = payload["data"][0]
+    assert "item" in enriched
+    assert enriched["item"] == {"company": "Anthropic"}
+    assert "enrichments" in enriched
+
+    enrichments = enriched["enrichments"]
+    assert "ceo" in enrichments
+    assert "headquarters" in enrichments
+    # Fields should have the expected structure
+    for field_name in ("ceo", "headquarters"):
+        field = enrichments[field_name]
+        assert "value" in field, f"Missing 'value' in {field_name}"
+        assert "source" in field, f"Missing 'source' in {field_name}"
+        if field["value"] is not None:
+            assert isinstance(field["value"], str)
+            assert isinstance(field["source"], str)
+            assert field["source"].startswith("http")
+
+
+def test_enrich_nonexistent_entity():
+    """POST /v2/enrich with a nonsense entity returns gracefully with empty enrichments."""
+    r = httpx.post(
+        AGENT + "/v2/enrich",
+        json={
+            "items": [{"xyzzy": "flurbo999zzz"}],
+            "fields": {
+                "foo": {"description": "Something that does not exist"},
+            },
+            "effort": "low",
+        },
+        timeout=120,
+    )
+    assert r.status_code == 200
+    payload = r.json()
+    assert payload["success"] is True
+    assert payload["items_enriched"] == 1
+    assert isinstance(payload["data"], list)
+    assert len(payload["data"]) == 1
+
+    enriched = payload["data"][0]
+    assert "item" in enriched
+    assert "enrichments" in enriched
+    # Should return empty enrichments (graceful) — no crash
+    enrichments = enriched["enrichments"]
+    if enrichments:
+        # If the LLM returned something, it should still be well-formed
+        for _field_name, field_value in enrichments.items():
+            assert "value" in field_value
+            assert "source" in field_value
+
+
+def test_enrich_multiple_items():
+    """POST /v2/enrich with multiple items processes each independently."""
+    r = httpx.post(
+        AGENT + "/v2/enrich",
+        json={
+            "items": [
+                {"company": "OpenAI"},
+                {"company": "Google"},
+            ],
+            "fields": {
+                "ceo": {"description": "CEO name"},
+            },
+            "source_hint": "company",
+            "effort": "low",
+        },
+        timeout=180,
+    )
+    assert r.status_code == 200
+    payload = r.json()
+    assert payload["success"] is True
+    assert payload["items_enriched"] == 2
+    assert payload["fields_per_item"] == 1
+    assert isinstance(payload["data"], list)
+    assert len(payload["data"]) == 2
+
+    # Each item should be present in the results
+    for enriched in payload["data"]:
+        assert "item" in enriched
+        assert "enrichments" in enriched
+        assert "ceo" in enriched["enrichments"]
+        field = enriched["enrichments"]["ceo"]
+        assert "value" in field
+        assert "source" in field

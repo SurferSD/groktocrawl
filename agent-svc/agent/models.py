@@ -331,3 +331,35 @@ class ActivityResponse(BaseModel):
 
     success: bool = True
     data: list[ActivityItem] = Field(default_factory=list)
+
+
+class EnrichmentField(BaseModel):
+    """A field to extract for each enrichment item."""
+
+    description: str
+
+
+class EnrichRequest(BaseModel):
+    """Request to enrich a list of entities with web-sourced structured data."""
+
+    items: list[dict[str, Any]]
+    fields: dict[str, EnrichmentField]
+    source_hint: str | None = None  # company, person, url, product
+    effort: str = "low"  # low | medium | high
+
+
+class EnrichmentValue(BaseModel):
+    """The extracted value for a single field, with source attribution."""
+
+    value: str | None = None
+    source: str | None = None  # URL where this value was found
+
+
+class EnrichResponse(BaseModel):
+    """Response for the enrichment endpoint."""
+
+    success: bool = True
+    data: list[dict]
+    latency_ms: float = 0
+    items_enriched: int = 0
+    fields_per_item: int = 0
