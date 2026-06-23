@@ -461,10 +461,10 @@ def extract_extras(html: str, options) -> dict:
             if href.startswith(("mailto:", "javascript:", "tel:", "#")):
                 continue
             # Resolve relative URLs against base
-            resolved: str = href
+            resolved = href  # type: ignore[assignment]
             if base_url:
                 with contextlib.suppress(Exception):
-                    resolved = urljoin(base_url, href)
+                    resolved = urljoin(base_url, href)  # type: ignore[arg-type]
             # Deduplicate
             if resolved not in links:
                 links.append(resolved)
