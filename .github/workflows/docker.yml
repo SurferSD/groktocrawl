@@ -271,4 +271,3 @@ jobs:
       - name: Tear down stack
         if: always()
         run: docker compose down --remove-orphans --timeout 30
-ci: retrigger
