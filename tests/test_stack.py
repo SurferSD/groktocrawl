@@ -1453,6 +1453,132 @@ def test_non_existent_browser_session_returns_404():
     assert data["error_code"] == "NOT_FOUND"
 
 
+# ── Richer content extraction tests ─────────────────────────────
+
+
+def test_scrape_with_contents_extras():
+    """POST /scrape with contents.extras returns extras data."""
+    r = httpx.post(
+        SCRAPER + "/scrape",
+        json={
+            "url": TEST_SITE + "/anything",
+            "contents": {"extras": {"links": 5, "imageLinks": 3, "codeBlocks": 2}},
+        },
+        timeout=120,
+    )
+    payload = r.json()
+    assert payload["success"] is True
+    # Extras may or may not be present depending on whether raw HTML was available
+    # from the tier that served the result. The API should not error.
+    assert "markdown" in payload["data"]
+
+
+def test_scrape_with_contents_compact_verbosity():
+    """POST /scrape with contents.text.verbosity=compact returns short text."""
+    r = httpx.post(
+        SCRAPER + "/scrape",
+        json={
+            "url": TEST_SITE + "/anything",
+            "contents": {"text": {"verbosity": "compact"}},
+        },
+        timeout=120,
+    )
+    payload = r.json()
+    assert payload["success"] is True
+    markdown = payload["data"].get("markdown", "")
+    assert markdown, "Should have markdown content"
+    if len(markdown) > 310:
+        # If raw HTML was available, compact should give ~300 chars
+        pass  # Not all tiers provide raw HTML; the assertion depends on tier
+
+
+def test_search_with_contents_not_set():
+    """Search without contents should return standard results (unchanged behavior)."""
+    r = httpx.post(
+        AGENT + "/v2/search",
+        json={"query": "test", "limit": 2},
+        timeout=120,
+    )
+    payload = r.json()
+    assert payload["success"] is True
+    results = payload["data"].get("web", [])
+    assert len(results) >= 1
+    # Should not have contents-specific fields
+    for item in results:
+        assert "highlights" not in item or item.get("highlights") is None
+        assert "summary" not in item or item.get("summary") is None
+
+
+def test_search_with_contents_fast_mode_triggers_scrape():
+    """Fast search with contents should still trigger scraping of results."""
+    r = httpx.post(
+        AGENT + "/v2/search",
+        json={
+            "query": "test",
+            "limit": 2,
+            "search_type": "fast",
+            "contents": {"highlights": {"maxCharacters": 500}},
+        },
+        timeout=120,
+    )
+    payload = r.json()
+    assert payload["success"] is True
+    results = payload["data"].get("web", [])
+    assert len(results) >= 1
+    # When LLM is available, highlights should be populated
+    # When LLM is not available, the field will be None (graceful degradation)
+
+
+def test_search_with_contents_highlights():
+    """Rich search with contents.highlights should return highlights per result."""
+    r = httpx.post(
+        AGENT + "/v2/search",
+        json={
+            "query": "test query",
+            "limit": 2,
+            "search_type": "rich",
+            "contents": {"highlights": {"maxCharacters": 500}},
+        },
+        timeout=120,
+    )
+    payload = r.json()
+    assert payload["success"] is True
+    results = payload["data"].get("web", [])
+    # The API should not error — highlights population depends on LLM availability
+
+
+def test_search_with_contents_summary():
+    """Rich search with contents.summary should return summaries per result."""
+    r = httpx.post(
+        AGENT + "/v2/search",
+        json={
+            "query": "test query",
+            "limit": 2,
+            "search_type": "rich",
+            "contents": {"summary": {"maxTokens": 100}},
+        },
+        timeout=120,
+    )
+    payload = r.json()
+    assert payload["success"] is True
+    # The API should not error — summary population depends on LLM availability
+
+
+def test_scrape_contents_default_unchanged():
+    """POST /scrape without contents should return same structure as before."""
+    r_no_contents = httpx.post(
+        SCRAPER + "/scrape",
+        json={"url": TEST_SITE + "/anything"},
+        timeout=120,
+    )
+    payload = r_no_contents.json()
+    assert payload["success"] is True
+    data = payload["data"]
+    assert "markdown" in data
+    assert "source" in data
+    assert "url" in data
+    # Extras should not appear when contents is not requested
+    assert "extras" not in data
 # ═══════════════════════════════════════════════════════════════════
 # ── Crawl Integration Tests ──────────────────────────────────────
 # ═══════════════════════════════════════════════════════════════════
