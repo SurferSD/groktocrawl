@@ -727,15 +727,6 @@ class SearchResponse(BaseModel):
     output: dict[str, Any] | None = None  # Present only when output_schema provided
 
 
-class ContentsOptions(BaseModel):
-    """Options for including content in find-similar results.
-
-    Phase 1 placeholder — accepted but not yet acted upon.
-    """
-
-    include_markdown: bool = False
-
-
 class FindSimilarRequest(BaseModel):
     url: str
     limit: int = 10

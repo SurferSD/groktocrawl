@@ -1905,11 +1905,11 @@ async def run_find_similar(
     scraper_url: str = "http://scraper-svc:8001",
     semantic_url: str = "http://semantic-svc:8003",
     searxng_url: str = "http://searxng:8080",
-) -> list["SearchResult"]:
+) -> list[dict]:
     """Find semantically similar pages for a given URL.
 
     Dispatches to the appropriate mode based on ``search_mode``.
-    Returns a list of ``SearchResult`` objects (url, title, description).
+    Returns a list of dicts with url, title, description.
     """
     from .models import SearchResult
 
@@ -1938,7 +1938,7 @@ async def _run_find_similar_qdrant(
     limit: int,
     scraper_url: str,
     semantic_url: str,
-) -> list["SearchResult"]:
+) -> list[dict]:
     """Find similar pages by scraping a URL, embedding its content,
     and searching the local Qdrant vector index."""
     from .models import SearchResult
@@ -1964,11 +1964,11 @@ async def _run_find_similar_qdrant(
         vector_results = await semantic.search_vector(query_text, limit=limit)
 
         return [
-            SearchResult(
-                url=r.get("url", ""),
-                title=r.get("title", ""),
-                description=r.get("content", "")[:200] if r.get("content") else "",
-            )
+            {
+                "url": r.get("url", ""),
+                "title": r.get("title", ""),
+                "description": r.get("content", "")[:200] if r.get("content") else "",
+            }
             for r in vector_results
         ]
     finally:
@@ -1982,7 +1982,7 @@ async def _run_find_similar_web(
     scraper_url: str,
     semantic_url: str,
     searxng_url: str,
-) -> list["SearchResult"]:
+) -> list[dict]:
     """Find similar pages by scraping a URL, extracting keywords,
     searching the open web, and reranking by cosine similarity."""
     import math
@@ -2053,9 +2053,11 @@ async def _run_find_similar_web(
 
         # 7. Return top N
         return [
-            SearchResult(
-                url=c["url"], title=c["title"], description=c["description"]
-            )
+            {
+                "url": c["url"],
+                "title": c["title"],
+                "description": c["description"],
+            }
             for _, c in scored[:limit]
         ]
     finally:
