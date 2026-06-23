@@ -6,13 +6,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
-COPY pyproject.toml .
+COPY parse-svc/pyproject.toml .
 RUN pip install --no-cache-dir -e .
 
 # Heavy/optional deps — install separately so failures don't block the build
 RUN pip install --no-cache-dir pytesseract pdf2image tabula-py camelot-py 2>/dev/null || true
 
-COPY parse_svc/ parse_svc/
+COPY parse-svc/parse_svc/ parse_svc/
+COPY common/ common/
 
 EXPOSE 8013
 CMD ["uvicorn", "parse_svc.app:app", "--host", "0.0.0.0", "--port", "8013"]

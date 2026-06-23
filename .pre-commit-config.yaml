@@ -38,3 +38,10 @@ repos:
       - id: check-case-conflict
         name: check case conflict
         description: "Check for filename case conflicts"
+
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.24.0
+    hooks:
+      - id: gitleaks
+        name: gitleaks
+        description: "Detect hardcoded secrets with gitleaks"

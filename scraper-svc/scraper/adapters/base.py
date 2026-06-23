@@ -93,10 +93,8 @@ class AdapterContext:
         """
         try:
             return await asyncio.wait_for(coro, timeout=timeout)
-        except asyncio.TimeoutError:
-            raise AdapterTimeoutError(
-                f"Timed out after {timeout}s"
-            )
+        except TimeoutError:
+            raise AdapterTimeoutError(f"Timed out after {timeout}s") from None
 
 
 # ── Adapter base class ───────────────────────────────────────────
@@ -173,7 +171,7 @@ class AdapterRegistry:
 
         import scraper.adapters as adapters_pkg
 
-        for (_finder, name, _ispkg) in pkgutil.iter_modules(
+        for _finder, name, _ispkg in pkgutil.iter_modules(
             adapters_pkg.__path__, prefix="scraper.adapters."
         ):
             if name == "scraper.adapters.base":

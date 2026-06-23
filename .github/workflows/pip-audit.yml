@@ -1,0 +1,56 @@
+# pip-audit Dependency Vulnerability Scanning CI
+#
+# Runs pip-audit against each service's dependency tree on push to main
+# and on a weekly schedule. Fails the job when known CVEs are found.
+#
+# Uses uv pip compile to generate requirements from pyproject.toml,
+# then scans them with pip-audit against the PyPA advisory database.
+
+name: pip-audit
+
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "0 6 * * 1"  # Weekly: Monday at 06:00 UTC
+  workflow_dispatch:       # Allow manual trigger
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install uv and pip-audit
+        run: |
+          pip install uv pip-audit
+
+      - name: Audit each service's dependency tree
+        run: |
+          services="agent-svc scraper-svc search-svc llm-svc parse-svc portal-svc browser-svc semantic-svc"
+          failed=0
+          for svc in $services; do
+            echo "=== $svc ==="
+            if [ -f "$svc/pyproject.toml" ]; then
+              uv pip compile "$svc/pyproject.toml" -q -o /tmp/$svc-requirements.txt
+              if pip-audit -r /tmp/$svc-requirements.txt; then
+                echo "OK: $svc — no known vulnerabilities"
+              else
+                echo "FAILED: $svc has known vulnerabilities"
+                failed=$((failed + 1))
+              fi
+            else
+              echo "SKIP: $svc — no pyproject.toml"
+            fi
+            echo ""
+          done
+          if [ $failed -gt 0 ]; then
+            echo "========================"
+            echo "$failed service(s) have known vulnerabilities"
+            exit 1
+          fi
+          echo "All services clean — no known vulnerabilities"

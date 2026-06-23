@@ -1,0 +1,210 @@
+{
+  "title": "GroktoCrawl — agent-svc Metrics",
+  "uid": "groktocrawl_agent_svc",
+  "schemaVersion": 39,
+  "version": 1,
+  "tags": ["groktocrawl", "agent-svc"],
+  "timezone": "browser",
+  "editable": true,
+  "panels": [
+    {
+      "title": "Job Execution Rate",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "rps",
+          "custom": {
+            "showPoints": "never"
+          }
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum(rate(jobs_submitted_total{instance=~\"agent-svc:8080.*\"}[$__rate_interval])) by (type)",
+          "legendFormat": "submitted {{type}}"
+        },
+        {
+          "expr": "sum(rate(jobs_completed_total{instance=~\"agent-svc:8080.*\"}[$__rate_interval])) by (type)",
+          "legendFormat": "completed {{type}}"
+        },
+        {
+          "expr": "sum(rate(jobs_failed_total{instance=~\"agent-svc:8080.*\"}[$__rate_interval])) by (type)",
+          "legendFormat": "failed {{type}}"
+        }
+      ],
+      "gridPos": {"h": 8, "w": 6, "x": 0, "y": 0}
+    },
+    {
+      "title": "Queue Depth",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "custom": {
+            "showPoints": "never"
+          }
+        }
+      },
+      "targets": [
+        {
+          "expr": "queue_depth{instance=~\"agent-svc:8080.*\"}",
+          "legendFormat": "Active jobs"
+        }
+      ],
+      "gridPos": {"h": 8, "w": 3, "x": 6, "y": 0}
+    },
+    {
+      "title": "Dependency Health",
+      "type": "stat",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "color": {
+            "mode": "background"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {"color": "red", "value": null},
+              {"color": "yellow", "value": 0.5},
+              {"color": "green", "value": 1.0}
+            ]
+          },
+          "min": 0,
+          "max": 1
+        }
+      },
+      "targets": [
+        {
+          "expr": "dependency_health{instance=~\"agent-svc:8080.*\"}",
+          "legendFormat": "{{dependency}}"
+        }
+      ],
+      "gridPos": {"h": 8, "w": 3, "x": 9, "y": 0}
+    },
+    {
+      "title": "Request Latency (p50/p95/p99)",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": {
+            "showPoints": "never"
+          }
+        }
+      },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.50, sum(rate(http_request_duration_seconds_bucket{instance=~\"agent-svc:8080.*\"}[$__rate_interval])) by (le))",
+          "legendFormat": "p50"
+        },
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket{instance=~\"agent-svc:8080.*\"}[$__rate_interval])) by (le))",
+          "legendFormat": "p95"
+        },
+        {
+          "expr": "histogram_quantile(0.99, sum(rate(http_request_duration_seconds_bucket{instance=~\"agent-svc:8080.*\"}[$__rate_interval])) by (le))",
+          "legendFormat": "p99"
+        }
+      ],
+      "gridPos": {"h": 8, "w": 6, "x": 0, "y": 8}
+    },
+    {
+      "title": "Job Duration (p50/p95/p99)",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": {
+            "showPoints": "never"
+          }
+        }
+      },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.50, sum(rate(job_duration_seconds_bucket{instance=~\"agent-svc:8080.*\"}[$__rate_interval])) by (le, type))",
+          "legendFormat": "p50 {{type}}"
+        },
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(job_duration_seconds_bucket{instance=~\"agent-svc:8080.*\"}[$__rate_interval])) by (le, type))",
+          "legendFormat": "p95 {{type}}"
+        },
+        {
+          "expr": "histogram_quantile(0.99, sum(rate(job_duration_seconds_bucket{instance=~\"agent-svc:8080.*\"}[$__rate_interval])) by (le, type))",
+          "legendFormat": "p99 {{type}}"
+        }
+      ],
+      "gridPos": {"h": 8, "w": 6, "x": 6, "y": 8}
+    },
+    {
+      "title": "Search Calls Rate",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "rps",
+          "custom": {
+            "showPoints": "never"
+          }
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum(rate(search_calls_total{instance=~\"agent-svc:8080.*\"}[$__rate_interval])) by (status)",
+          "legendFormat": "{{status}}"
+        }
+      ],
+      "gridPos": {"h": 8, "w": 6, "x": 0, "y": 16}
+    },
+    {
+      "title": "Scrape Metrics",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "rps",
+          "custom": {
+            "showPoints": "never"
+          }
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum(rate(scrapes_total{instance=~\"agent-svc:8080.*\"}[$__rate_interval])) by (tier)",
+          "legendFormat": "Scrapes {{tier}}"
+        },
+        {
+          "expr": "rate(scrape_duration_seconds_sum{instance=~\"agent-svc:8080.*\"}[$__rate_interval]) / rate(scrape_duration_seconds_count{instance=~\"agent-svc:8080.*\"}[$__rate_interval])",
+          "legendFormat": "Avg scrape duration (s)"
+        }
+      ],
+      "gridPos": {"h": 8, "w": 6, "x": 6, "y": 16}
+    }
+  ]
+}

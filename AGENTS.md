@@ -10,7 +10,7 @@ GroktoCrawl is a self-hosted, MIT-licensed alternative to Firecrawl. It implemen
 
 ```
 groktocrawl/
-├── agent-svc/          # Main API + agent research loop
+├── agent-svc/          # Main API + agent research loop + crawl engine
 │   └── agent/
 │       ├── app.py      # FastAPI app factory, wires dependencies
 │       ├── api.py      # Route handlers (all endpoints)
@@ -20,7 +20,15 @@ groktocrawl/
 │       ├── scraper_client.py  # HTTP client to scraper-svc
 │       ├── searxng_client.py  # Search API client
 │       ├── llm.py      # OpenAI-compatible LLM client
-│       └── store.py    # Job CRUD backed by Valkey
+│       ├── store.py    # Job CRUD backed by Valkey
+│       ├── crawler.py  # BFS crawl orchestrator (queue, concurrency, path filtering)
+│       ├── link_extractor.py  # Shared HTML link extraction (used by crawl, map, llmstxt)
+│       ├── sitemap_parser.py  # XML sitemap fetcher/parser (robots.txt, common paths, nested indexes)
+│       ├── dedup.py    # Multi-layer dedup (canonical tag + content hash) for crawl pages
+│       ├── crawl_cache.py  # Valkey-backed response cache with maxAge/minAge semantics
+│       ├── crawl_stream.py  # SSE event streaming for crawl progress
+│       ├── nl_params.py # NL-to-params translation for crawl parameter derivation
+│       └── tasks.py    # Background task tracker for fire-and-forget job processing
 ├── scraper-svc/        # URL → markdown service
 │   └── scraper/
 │       ├── app.py      # FastAPI, single /scrape endpoint
@@ -51,8 +59,8 @@ Tier 3: Playwright render + readability extraction
 
 **Adapters run before tier 1.** When a URL matches a registered adapter, the adapter handles extraction with its own optimized fallback chain. If the adapter fails, the standard tier pipeline runs as normal. See `scraper-svc/scraper/adapters/base.py` for the adapter framework and `scraper-svc/scraper/adapters/` for available adapters.
 
-**Current adapter categories (21 total):**
-- **File/structured:** gutenberg (Project Gutenberg books as chapter-structured markdown), youtube, bluesky, substack
+**Current adapter categories (22 total):**
+- **File/structured:** gutenberg (Project Gutenberg books as chapter-structured markdown), shopify (bypasses UCP content-negotiation trap on Shopify blog/content pages), youtube, bluesky, substack
 - **Code:** github (file/repo), github-social (issues/PRs/discussions/releases)
 - **Vulnerability/CVE:** nvd (NVD API, enriched), cveorg (MITRE CVE Program, authoritative)
 - **Security/threat intelligence:** abuseipdb, censys, crtsh, exploitdb, hibp, mitreattack, otx, shodan, virustotal, vulncheck
@@ -87,6 +95,42 @@ When `stream` is omitted, the existing create→poll pattern is used. The CLI de
 
 A synchronous single-turn Q&A endpoint that bridges `/v2/search` and `/v2/agent`: search → scrape top results → LLM synthesis with inline citations. Designed for 1-3s latency. Request fields: `query` (required), `num_sources` (1-20, default 5), `model` (per-request LLM override), `stream` (boolean, SSE streaming). Returns `answer` (markdown with `[N]` citation markers), `sources` (list of `{url, title, relevance}`), `citations` (index→URL mapping), `search_type`, and `latency_ms`. When `stream: true`, delivers SSE events: `sources`, `token` (individual tokens), `done` (final), and `error`.
 
+### Crawl Engine
+
+The crawl engine (`agent-svc/agent/crawler.py`) replaces the original stub crawl with a full recursive BFS crawler that achieves Firecrawl `/v2/crawl` feature parity.
+
+**Core modules:**
+
+- **`crawler.py`** (`CrawlEngine`) — BFS crawl orchestrator. Manages a queue of (url, depth) tuples, enforces `max_pages` / `max_depth` limits, uses asyncio.Semaphore for configurable concurrency, supports delay-based pacing (forces sequential), integrates with the shared `LinkExtractor` for child link discovery, and writes progress to the job store for status polling. Handles per-scrape timeouts, cancellation, and maximum-duration guards.
+
+- **`link_extractor.py`** — Shared stateless module for extracting `<a href>` links from HTML. Used by crawl, `/v2/map`, and `llmstxt.py`. Resolves relative URLs against `base_url` (or `<base>` tag), strips fragments, filters non-http/https schemes, deduplicates within a page, and classifies links as internal/subdomain/external.
+
+- **`sitemap_parser.py`** (`SitemapParser`) — Fetches and parses XML sitemaps. Discovers sitemap URLs from robots.txt `Sitemap:` directives (preferred) and falls back to common locations (`/sitemap.xml`, `/sitemap_index.xml`). Handles sitemap index files recursively (up to 3 levels), gzipped content, and degrades gracefully on errors.
+
+- **`dedup.py`** (`DedupManager`) — Multi-layer deduplication for crawl pages. Layer 2: canonical tag check (`<link rel="canonical">`) — if the canonical URL was already scraped, the current page is skipped. Layer 3: SHA-256 content hash — byte-for-byte identical markdown is treated as duplicate. Canonical check always runs before content hash check.
+
+- **`crawl_cache.py`** (`CrawlCache`) — Valkey-backed response cache with `maxAge`/`minAge` semantics. Cache keys are SHA-256 hashes of URLs. Entry includes cached_at timestamp and TTL. `maxAge` serves fresh content from cache if younger than threshold; `minAge` operates in cache-only mode (cache miss returns error). Used by `CrawlEngine` before each page scrape.
+
+- **`crawl_stream.py`** — SSE streaming support for crawl progress. Delivers per-page events (`page`, `progress`, `done`, `error`) as pages are scraped. Handles reconnection to in-progress crawls and replay of completed results.
+
+- **`nl_params.py`** — Natural language to crawl parameters translation. Used by `POST /v2/crawl` (when `prompt` is provided) and `POST /v2/crawl/params-preview`. Calls the LLM to derive `include_paths`, `exclude_paths`, `max_depth`, and `limit` from a user's NL description. Explicitly-set parameters override LLM-derived ones.
+
+**Crawl API endpoints:**
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/v2/crawl` | Create a crawl job. Supports all Firecrawl v2 parameters (path filtering, sitemap modes, concurrency, delay, dedup, webhooks, SSE streaming, NL-to-params) |
+| GET | `/v2/crawl/{job_id}` | Get crawl status with pagination (`next`), enhanced metadata (`created_at`, `completed_at`, `expires_at`, `duration`), and per-page enrichment (title, status_code, content_type, scraped_at, duration_ms) |
+| DELETE | `/v2/crawl/{job_id}` | Cancel an in-progress crawl |
+| GET | `/v2/crawl/{job_id}/errors` | Get per-URL errors and robots-blocked URLs with error types, HTTP status codes, and timestamps |
+| GET | `/v2/crawl/{job_id}/stream` | SSE stream of crawl progress — delivers per-page events (`page`, `progress`, `done`, `error`) as pages are scraped; supports reconnection to in-progress crawls and replay of completed results |
+| GET | `/v2/crawl/active` | List active/processing crawl jobs with crawl-specific fields (url, max_pages, max_depth, completed, total) |
+| POST | `/v2/crawl/params-preview` | Preview LLM-derived crawl parameters from a natural-language prompt without starting a crawl |
+
+**Concurrency model:** Configurable via `maxConcurrency` (1-50, default 3) with `asyncio.Semaphore`. When `delay` is set, concurrency is forced to 1 with `asyncio.sleep()` between scrapes. Valkey-backed distributed coordination is optional for multi-instance deployments.
+
+**Data flow:** `POST /v2/crawl` → `api.py:create_crawl()` → `JobStore.create_job()` → `_process_crawl_async()` (background task) → `CrawlEngine.run()` → per-page: cache check → path filter → scraper fetch → canonical check → content hash dedup → link extraction → enqueue children → job store progress update. Webhooks fire per-page (`crawl.page`) and on completion (`crawl.completed`).
+
 ## Testing
 
 ```bash
@@ -120,3 +164,13 @@ The integration tests in `tests/test_stack.py` verify all endpoints against a li
 ## Environment Variables
 
 See `.env.sample` for all configurable variables. The `.env` file is loaded by `docker compose` automatically via the `env_file:` directive in `docker-compose.yml`.
+
+## graphify
+
+This project has a graphify knowledge graph at graphify-out/.
+
+Rules:
+- Before answering architecture or codebase questions, read graphify-out/GRAPH_REPORT.md for god nodes and community structure
+- If graphify-out/wiki/index.md exists, navigate it instead of reading raw files
+- For cross-module "how does X relate to Y" questions, prefer `graphify query "<question>"`, `graphify path "<A>" "<B>"`, or `graphify explain "<concept>"` over grep — these traverse the graph's EXTRACTED + INFERRED edges instead of scanning files
+- After modifying code files in this session, run `graphify update .` to keep the graph current (AST-only, no API cost)

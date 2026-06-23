@@ -36,13 +36,11 @@ def test_stealth_module_imports():
     assert (
         "webdriver" in STEALTH_INIT_SCRIPT
     )  # Object.defineProperty(navigator, 'webdriver')
+    assert "plugins" in STEALTH_INIT_SCRIPT  # Added for navigator.plugins spoofing
+    assert "chrome" in STEALTH_INIT_SCRIPT  # Added for chrome.runtime spoofing
     assert (
-        "plugins" not in STEALTH_INIT_SCRIPT
-    )  # Stripped for compatibility with browser-svc
-    assert (
-        "chrome" not in STEALTH_INIT_SCRIPT
-    )  # Stripped for compatibility with browser-svc
-    assert "getParameter" not in STEALTH_INIT_SCRIPT  # Stripped for compatibility
+        "getParameter" in STEALTH_INIT_SCRIPT
+    )  # Added for WebGL vendor/renderer spoofing
 
 
 def test_stealth_browser_args_comprehensive():
@@ -101,7 +99,7 @@ class TestBotChallengeDetection:
 
     @staticmethod
     def _import_func():
-        from scraper.fetch import _is_bot_challenge
+        from scraper.fetch_quality import _is_bot_challenge
 
         return _is_bot_challenge
 
@@ -145,7 +143,7 @@ class TestSubstackRedirectDetection:
 
     @staticmethod
     def _import_func():
-        from scraper.fetch import _is_substack_redirect
+        from scraper.fetch_quality import _is_substack_redirect
 
         return _is_substack_redirect
 
@@ -177,7 +175,7 @@ class TestBarrierClassification:
 
     @staticmethod
     def _import():
-        from scraper.fetch import BarrierInfo, _classify_barrier
+        from scraper.fetch_quality import BarrierInfo, _classify_barrier
 
         return _classify_barrier, BarrierInfo
 

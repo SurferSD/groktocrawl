@@ -7,6 +7,7 @@ Ported from browser-svc/browser_svc/app.py.
 Shares the same key prefix (cf:clearance:) and TTL (1500s).
 """
 
+import contextlib
 import json
 import logging
 import time
@@ -64,10 +65,8 @@ async def close_client():
     """Close the Valkey client connection."""
     global _redis_client
     if _redis_client is not None:
-        try:
+        with contextlib.suppress(Exception):
             await _redis_client.close()
-        except Exception:
-            pass
         _redis_client = None
 
 

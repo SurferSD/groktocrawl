@@ -28,7 +28,16 @@ class TestProcessAgentAsync:
             patch("agent.worker.run_research", mock_run_research),
             patch("agent.worker.deliver_webhook", mock_deliver_webhook),
             patch("agent.worker.METRICS", mock_metrics),
-            patch("agent.worker.get_env", return_value="redis://valkey:6379/0"),
+            patch(
+                "agent.worker.load_settings",
+                return_value=MagicMock(
+                    valkey_host="valkey",
+                    valkey_port=6379,
+                    valkey_db=0,
+                    crawl_max_duration_seconds=1800,
+                    crawl_idle_timeout_seconds=300,
+                ),
+            ),
         ):
             await _process_agent_async(
                 job_id="test-job-1",
@@ -67,7 +76,16 @@ class TestProcessAgentAsync:
             patch("agent.worker.run_research", mock_run_research),
             patch("agent.worker.deliver_webhook", mock_deliver_webhook),
             patch("agent.worker.METRICS", mock_metrics),
-            patch("agent.worker.get_env", return_value="redis://valkey:6379/0"),
+            patch(
+                "agent.worker.load_settings",
+                return_value=MagicMock(
+                    valkey_host="valkey",
+                    valkey_port=6379,
+                    valkey_db=0,
+                    crawl_max_duration_seconds=1800,
+                    crawl_idle_timeout_seconds=300,
+                ),
+            ),
         ):
             await _process_agent_async(
                 job_id="test-job-fail",
@@ -105,7 +123,16 @@ class TestProcessAgentAsync:
             patch("agent.worker.run_research", mock_run_research),
             patch("agent.worker.deliver_webhook", mock_deliver_webhook),
             patch("agent.worker.METRICS", mock_metrics),
-            patch("agent.worker.get_env", return_value="redis://valkey:6379/0"),
+            patch(
+                "agent.worker.load_settings",
+                return_value=MagicMock(
+                    valkey_host="valkey",
+                    valkey_port=6379,
+                    valkey_db=0,
+                    crawl_max_duration_seconds=1800,
+                    crawl_idle_timeout_seconds=300,
+                ),
+            ),
         ):
             await _process_agent_async(
                 job_id="test-job-url",
@@ -131,6 +158,7 @@ class TestProcessCrawlAsync:
         from agent.worker import _process_crawl_async
 
         mock_store = MagicMock()
+        mock_store.get_job.return_value = {"status": "processing"}  # not cancelled
         mock_scraper_instance = MagicMock()
         mock_scraper_instance.scrape = AsyncMock(
             return_value={
@@ -153,7 +181,16 @@ class TestProcessCrawlAsync:
             patch("agent.worker.ScraperClient", return_value=mock_scraper_instance),
             patch("agent.worker.deliver_webhook", mock_deliver_webhook),
             patch("agent.worker.METRICS", mock_metrics),
-            patch("agent.worker.get_env", return_value="redis://valkey:6379/0"),
+            patch(
+                "agent.worker.load_settings",
+                return_value=MagicMock(
+                    valkey_host="valkey",
+                    valkey_port=6379,
+                    valkey_db=0,
+                    crawl_max_duration_seconds=1800,
+                    crawl_idle_timeout_seconds=300,
+                ),
+            ),
             patch("agent.worker._index_page_async", AsyncMock()),
         ):
             await _process_crawl_async(
@@ -174,7 +211,12 @@ class TestProcessCrawlAsync:
         assert payload["pages"][0]["url"] == "https://example.com"
         assert payload["pages"][0]["markdown"] == "# Crawled page"
 
-        mock_deliver_webhook.assert_called_once()
+        # Webhook called 3 times: crawl.started, crawl.page, crawl.completed
+        assert mock_deliver_webhook.call_count == 3
+        events = [call[0][1] for call in mock_deliver_webhook.call_args_list]
+        assert events[0] == "crawl.started"
+        assert events[1] == "crawl.page"
+        assert events[2] == "crawl.completed"
         mock_scraper_instance.close.assert_called_once()
 
     @pytest.mark.asyncio
@@ -196,7 +238,16 @@ class TestProcessCrawlAsync:
             patch("agent.worker.ScraperClient", return_value=mock_scraper_instance),
             patch("agent.worker.deliver_webhook", mock_deliver_webhook),
             patch("agent.worker.METRICS", mock_metrics),
-            patch("agent.worker.get_env", return_value="redis://valkey:6379/0"),
+            patch(
+                "agent.worker.load_settings",
+                return_value=MagicMock(
+                    valkey_host="valkey",
+                    valkey_port=6379,
+                    valkey_db=0,
+                    crawl_max_duration_seconds=1800,
+                    crawl_idle_timeout_seconds=300,
+                ),
+            ),
         ):
             await _process_crawl_async(
                 job_id="crawl-fail",
@@ -206,11 +257,80 @@ class TestProcessCrawlAsync:
                 scraper_url="http://scraper:8001",
             )
 
-        mock_store.fail_job.assert_called_once_with("crawl-fail", "Crawl error")
-        mock_deliver_webhook.assert_called_once()
-        # Verify failed event
-        assert mock_deliver_webhook.call_args[0][1] == "failed"
+        # The CrawlEngine now handles start URL scrape failures internally
+        # and returns a CrawlResult with errors rather than raising.
+        # The crawl completes with 0 pages and error entries.
+        mock_store.complete_job.assert_called_once()
+        call_args = mock_store.complete_job.call_args[0][1]
+        assert call_args["completed"] == 0
+        assert len(call_args["errors"]) > 0
+        # Webhook called 2 times: crawl.started, then crawl.completed
+        assert mock_deliver_webhook.call_count == 2
+        events = [call[0][1] for call in mock_deliver_webhook.call_args_list]
+        assert events[0] == "crawl.started"
+        assert events[1] == "crawl.completed"
         # scraper.close() called in finally
+        mock_scraper_instance.close.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_cancelled_during_crawl(self):
+        """Verify cancellation: engine detects cancelled status, preserves it."""
+        from agent.worker import _process_crawl_async
+
+        mock_store = MagicMock()
+        # Simulate job being cancelled in Redis (as DELETE would set)
+        mock_store.get_job.return_value = {"status": "cancelled"}
+        mock_scraper_instance = MagicMock()
+        mock_scraper_instance.scrape = AsyncMock(
+            return_value={
+                "success": True,
+                "data": {
+                    "markdown": "# Crawled page",
+                    "metadata": {},
+                },
+            }
+        )
+        mock_scraper_instance.close = AsyncMock()
+        mock_deliver_webhook = AsyncMock()
+        mock_metrics = MagicMock()
+        mock_metrics.counter.return_value.inc = MagicMock()
+        mock_metrics.histogram.return_value.observe = MagicMock()
+
+        with (
+            patch("agent.worker.JobStore", return_value=mock_store),
+            patch("agent.worker.ScraperClient", return_value=mock_scraper_instance),
+            patch("agent.worker.deliver_webhook", mock_deliver_webhook),
+            patch("agent.worker.METRICS", mock_metrics),
+            patch(
+                "agent.worker.load_settings",
+                return_value=MagicMock(
+                    valkey_host="valkey",
+                    valkey_port=6379,
+                    valkey_db=0,
+                    crawl_max_duration_seconds=1800,
+                    crawl_idle_timeout_seconds=300,
+                ),
+            ),
+            patch("agent.worker._index_page_async", AsyncMock()),
+        ):
+            await _process_crawl_async(
+                job_id="crawl-cancel",
+                url="https://example.com",
+                max_pages=10,
+                max_depth=2,
+                scraper_url="http://scraper:8001",
+            )
+
+        # complete_job should NOT be called — cancel_job already set status
+        mock_store.complete_job.assert_not_called()
+        # Webhook: crawl.started, crawl.page (for start URL), crawl.completed (cancelled)
+        assert mock_deliver_webhook.call_count >= 2
+        events = [call[0][1] for call in mock_deliver_webhook.call_args_list]
+        assert events[0] == "crawl.started"
+        # Last event should be crawl.completed (for cancelled status)
+        assert events[-1] == "crawl.completed"
+        # The cancelled webhook has success=True and data=[] (VAL-PARITY-007)
+        # The cancelled status is stored in Redis and retrievable via GET /v2/crawl/{id}
         mock_scraper_instance.close.assert_called_once()
 
     @pytest.mark.asyncio
@@ -237,7 +357,16 @@ class TestProcessCrawlAsync:
             patch("agent.worker.ScraperClient", return_value=mock_scraper_instance),
             patch("agent.worker.deliver_webhook", mock_deliver_webhook),
             patch("agent.worker.METRICS", mock_metrics),
-            patch("agent.worker.get_env", return_value="redis://valkey:6379/0"),
+            patch(
+                "agent.worker.load_settings",
+                return_value=MagicMock(
+                    valkey_host="valkey",
+                    valkey_port=6379,
+                    valkey_db=0,
+                    crawl_max_duration_seconds=1800,
+                    crawl_idle_timeout_seconds=300,
+                ),
+            ),
             patch("agent.worker._index_page_async", AsyncMock()),
         ):
             await _process_crawl_async(
@@ -291,7 +420,16 @@ class TestProcessBatchScrapeAsync:
             patch("agent.worker.ScraperClient", return_value=mock_scraper_instance),
             patch("agent.worker.deliver_webhook", mock_deliver_webhook),
             patch("agent.worker.METRICS", mock_metrics),
-            patch("agent.worker.get_env", return_value="redis://valkey:6379/0"),
+            patch(
+                "agent.worker.load_settings",
+                return_value=MagicMock(
+                    valkey_host="valkey",
+                    valkey_port=6379,
+                    valkey_db=0,
+                    crawl_max_duration_seconds=1800,
+                    crawl_idle_timeout_seconds=300,
+                ),
+            ),
             patch("agent.worker._index_batch_async", mock_index_batch),
         ):
             await _process_batch_scrape_async(
@@ -345,7 +483,16 @@ class TestProcessBatchScrapeAsync:
             patch("agent.worker.ScraperClient", return_value=mock_scraper_instance),
             patch("agent.worker.deliver_webhook", mock_deliver_webhook),
             patch("agent.worker.METRICS", mock_metrics),
-            patch("agent.worker.get_env", return_value="redis://valkey:6379/0"),
+            patch(
+                "agent.worker.load_settings",
+                return_value=MagicMock(
+                    valkey_host="valkey",
+                    valkey_port=6379,
+                    valkey_db=0,
+                    crawl_max_duration_seconds=1800,
+                    crawl_idle_timeout_seconds=300,
+                ),
+            ),
         ):
             await _process_batch_scrape_async(
                 job_id="batch-partial",
@@ -384,7 +531,16 @@ class TestProcessBatchScrapeAsync:
             patch("agent.worker.ScraperClient", return_value=mock_scraper_instance),
             patch("agent.worker.deliver_webhook", mock_deliver_webhook),
             patch("agent.worker.METRICS", mock_metrics),
-            patch("agent.worker.get_env", return_value="redis://valkey:6379/0"),
+            patch(
+                "agent.worker.load_settings",
+                return_value=MagicMock(
+                    valkey_host="valkey",
+                    valkey_port=6379,
+                    valkey_db=0,
+                    crawl_max_duration_seconds=1800,
+                    crawl_idle_timeout_seconds=300,
+                ),
+            ),
         ):
             await _process_batch_scrape_async(
                 job_id="batch-fail",
@@ -418,7 +574,16 @@ class TestProcessExtractAsync:
             patch("agent.worker.run_extract", mock_run_extract),
             patch("agent.worker.deliver_webhook", mock_deliver_webhook),
             patch("agent.worker.METRICS", mock_metrics),
-            patch("agent.worker.get_env", return_value="redis://valkey:6379/0"),
+            patch(
+                "agent.worker.load_settings",
+                return_value=MagicMock(
+                    valkey_host="valkey",
+                    valkey_port=6379,
+                    valkey_db=0,
+                    crawl_max_duration_seconds=1800,
+                    crawl_idle_timeout_seconds=300,
+                ),
+            ),
         ):
             await _process_extract_async(
                 job_id="extract-1",
@@ -453,7 +618,16 @@ class TestProcessExtractAsync:
             patch("agent.worker.run_extract", mock_run_extract),
             patch("agent.worker.deliver_webhook", mock_deliver_webhook),
             patch("agent.worker.METRICS", mock_metrics),
-            patch("agent.worker.get_env", return_value="redis://valkey:6379/0"),
+            patch(
+                "agent.worker.load_settings",
+                return_value=MagicMock(
+                    valkey_host="valkey",
+                    valkey_port=6379,
+                    valkey_db=0,
+                    crawl_max_duration_seconds=1800,
+                    crawl_idle_timeout_seconds=300,
+                ),
+            ),
         ):
             await _process_extract_async(
                 job_id="extract-fail",
@@ -497,7 +671,16 @@ class TestProcessLlmstxtAsync:
             patch("agent.llmstxt.generate_llmstxt", mock_generate_llmstxt),
             patch("agent.worker.deliver_webhook", mock_deliver_webhook),
             patch("agent.worker.METRICS", mock_metrics),
-            patch("agent.worker.get_env", return_value="redis://valkey:6379/0"),
+            patch(
+                "agent.worker.load_settings",
+                return_value=MagicMock(
+                    valkey_host="valkey",
+                    valkey_port=6379,
+                    valkey_db=0,
+                    crawl_max_duration_seconds=1800,
+                    crawl_idle_timeout_seconds=300,
+                ),
+            ),
         ):
             await _process_llmstxt_async(
                 job_id="llmstxt-1",
@@ -529,7 +712,16 @@ class TestProcessLlmstxtAsync:
             patch("agent.llmstxt.generate_llmstxt", mock_generate_llmstxt),
             patch("agent.worker.deliver_webhook", mock_deliver_webhook),
             patch("agent.worker.METRICS", mock_metrics),
-            patch("agent.worker.get_env", return_value="redis://valkey:6379/0"),
+            patch(
+                "agent.worker.load_settings",
+                return_value=MagicMock(
+                    valkey_host="valkey",
+                    valkey_port=6379,
+                    valkey_db=0,
+                    crawl_max_duration_seconds=1800,
+                    crawl_idle_timeout_seconds=300,
+                ),
+            ),
         ):
             await _process_llmstxt_async(
                 job_id="llmstxt-fail",
@@ -561,7 +753,13 @@ class TestIndexPageAsync:
             ),
             patch(
                 "agent.worker.load_settings",
-                return_value=_settings_mock,
+                return_value=MagicMock(
+                    valkey_host="valkey",
+                    valkey_port=6379,
+                    valkey_db=0,
+                    crawl_max_duration_seconds=1800,
+                    crawl_idle_timeout_seconds=300,
+                ),
             ),
         ):
             await _index_page_async(
@@ -597,7 +795,13 @@ class TestIndexPageAsync:
             ),
             patch(
                 "agent.worker.load_settings",
-                return_value=_settings_mock,
+                return_value=MagicMock(
+                    valkey_host="valkey",
+                    valkey_port=6379,
+                    valkey_db=0,
+                    crawl_max_duration_seconds=1800,
+                    crawl_idle_timeout_seconds=300,
+                ),
             ),
         ):
             # Should not raise
@@ -628,7 +832,13 @@ class TestIndexPageAsync:
             ),
             patch(
                 "agent.worker.load_settings",
-                return_value=_settings_mock,
+                return_value=MagicMock(
+                    valkey_host="valkey",
+                    valkey_port=6379,
+                    valkey_db=0,
+                    crawl_max_duration_seconds=1800,
+                    crawl_idle_timeout_seconds=300,
+                ),
             ),
         ):
             # Must not raise — fire-and-forget
@@ -675,7 +885,13 @@ class TestIndexBatchAsync:
             ),
             patch(
                 "agent.worker.load_settings",
-                return_value=_settings_mock,
+                return_value=MagicMock(
+                    valkey_host="valkey",
+                    valkey_port=6379,
+                    valkey_db=0,
+                    crawl_max_duration_seconds=1800,
+                    crawl_idle_timeout_seconds=300,
+                ),
             ),
         ):
             await _index_batch_async(pages)
@@ -705,7 +921,13 @@ class TestIndexBatchAsync:
             ),
             patch(
                 "agent.worker.load_settings",
-                return_value=_settings_mock,
+                return_value=MagicMock(
+                    valkey_host="valkey",
+                    valkey_port=6379,
+                    valkey_db=0,
+                    crawl_max_duration_seconds=1800,
+                    crawl_idle_timeout_seconds=300,
+                ),
             ),
         ):
             await _index_batch_async(

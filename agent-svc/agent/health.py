@@ -56,13 +56,25 @@ async def check_searxng(url: str) -> dict[str, Any]:
                     "detail": "SearXNG health ok",
                 }
             elapsed = (time.monotonic() - start) * 1000
-            return {"status": "down", "latency_ms": round(elapsed, 1), "detail": f"SearXNG health returned HTTP {resp.status_code}"}
-    except asyncio.TimeoutError:
+            return {
+                "status": "down",
+                "latency_ms": round(elapsed, 1),
+                "detail": f"SearXNG health returned HTTP {resp.status_code}",
+            }
+    except TimeoutError:
         elapsed = (time.monotonic() - start) * 1000
-        return {"status": "down", "latency_ms": round(elapsed, 1), "detail": "SearXNG connection timed out"}
+        return {
+            "status": "down",
+            "latency_ms": round(elapsed, 1),
+            "detail": "SearXNG connection timed out",
+        }
     except Exception as e:
         elapsed = (time.monotonic() - start) * 1000
-        return {"status": "down", "latency_ms": round(elapsed, 1), "detail": f"SearXNG error: {e}"}
+        return {
+            "status": "down",
+            "latency_ms": round(elapsed, 1),
+            "detail": f"SearXNG error: {e}",
+        }
 
 
 async def check_scraper(url: str) -> dict[str, Any]:

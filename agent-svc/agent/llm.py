@@ -6,6 +6,7 @@ Ollama, llama.cpp, vLLM, etc.
 
 import json
 import logging
+from collections.abc import AsyncGenerator
 
 import httpx
 
@@ -33,7 +34,7 @@ class LLMClient:
         system_prompt: str,
         user_prompt: str,
         context: str | None = None,
-    ):
+    ) -> AsyncGenerator[dict[str, str], None]:
         """Generate a streaming response from the LLM (SSE).
 
         Yields dicts with keys:
@@ -191,11 +192,46 @@ class LLMClient:
 
             result = resp.json()
             content = result["choices"][0]["message"]["content"]
-            return content
+            return content  # type: ignore[no-any-return]
 
         except Exception as e:
             logger.error("LLM call failed: %s", e)
             return f"Error: LLM call failed: {e}"
 
-    async def close(self):
+    async def check_health(self) -> bool:
+        """Check if the LLM backend is reachable and responding.
+
+        Sends a minimal request (max_tokens=1, stream=False) with a
+        short 5s timeout. Returns True if the backend responds with
+        HTTP 200, False otherwise. Never raises exceptions.
+        """
+        body = {
+            "model": self.model,
+            "messages": [{"role": "user", "content": "ping"}],
+            "max_tokens": 1,
+            "stream": False,
+        }
+        headers = {"Content-Type": "application/json"}
+        if self.api_key:
+            headers["Authorization"] = f"Bearer {self.api_key}"
+        try:
+            async with httpx.AsyncClient(timeout=5) as client:
+                resp = await client.post(
+                    f"{self.base_url}/chat/completions",
+                    headers=headers,
+                    json=body,
+                )
+                if resp.status_code == 200:
+                    return True
+                logger.error(
+                    "LLM health check failed: HTTP %d — %s",
+                    resp.status_code,
+                    resp.text[:500],
+                )
+                return False
+        except Exception as e:
+            logger.error("LLM health check failed: %s", e)
+            return False
+
+    async def close(self) -> None:
         await self._client.aclose()

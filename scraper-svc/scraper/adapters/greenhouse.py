@@ -88,7 +88,9 @@ async def _fetch_job_api(board: str, job_id: str) -> dict | None:
             if resp.status_code == 200:
                 return resp.json()
             elif resp.status_code == 404:
-                logger.debug("Greenhouse API 404: job %s not found on board %s", job_id, board)
+                logger.debug(
+                    "Greenhouse API 404: job %s not found on board %s", job_id, board
+                )
                 return None
             elif resp.status_code == 429:
                 logger.debug("Greenhouse API rate limited for board %s", board)
@@ -105,7 +107,9 @@ async def _fetch_job_api(board: str, job_id: str) -> dict | None:
         logger.debug("Greenhouse API timed out for board=%s job=%s", board, job_id)
         return None
     except Exception as exc:
-        logger.debug("Greenhouse API failed for board=%s job=%s: %s", board, job_id, exc)
+        logger.debug(
+            "Greenhouse API failed for board=%s job=%s: %s", board, job_id, exc
+        )
         return None
 
 
@@ -164,7 +168,9 @@ def _format_job_as_markdown(data: dict, board: str, job_id: str) -> tuple[str, d
         location_name = loc
 
     # Departments
-    departments = [d.get("name", "") for d in data.get("departments", []) if d.get("name")]
+    departments = [
+        d.get("name", "") for d in data.get("departments", []) if d.get("name")
+    ]
 
     # Employment type from metadata
     employment_type = ""
@@ -226,7 +232,9 @@ def _format_job_as_markdown(data: dict, board: str, job_id: str) -> tuple[str, d
         parts.append("*No description available*")
 
     parts.append("")
-    parts.append(f"*Source: [Greenhouse]({absolute_url or f'https://boards.greenhouse.io/{board}/jobs/{job_id}'})*")
+    parts.append(
+        f"*Source: [Greenhouse]({absolute_url or f'https://boards.greenhouse.io/{board}/jobs/{job_id}'})*"
+    )
 
     markdown = "\n".join(parts).strip()
     return markdown, metadata
@@ -254,17 +262,19 @@ class GreenhouseAdapter(SiteAdapter):
         if parsed:
             board, job_id = parsed
         else:
-            # Try gh_jid from query param
             gh_jid = _extract_gh_jid_from_query(url)
             if not gh_jid:
-                raise AdapterError(f"Could not extract board and job ID from URL: {url}")
-            # For gh_jid-only URLs, try to discover the company via the embed page
-            job_id = gh_jid
-            board = await self._discover_board(job_id, ctx)
-            if not board:
                 raise AdapterError(
-                    f"Could not discover Greenhouse board name for job {job_id}"
+                    f"Could not extract board and job ID from URL: {url}"
                 )
+            # For gh_jid-only URLs, try to discover the company via the embed page
+            discovered = await self._discover_board(gh_jid, ctx)
+            if not discovered:
+                raise AdapterError(
+                    f"Could not discover Greenhouse board name for job {gh_jid}"
+                )
+            board = discovered
+            job_id = gh_jid
 
         # Tier 1: Greenhouse Boards API
         logger.info("Greenhouse adapter: trying API for %s/%s", board, job_id)
@@ -295,9 +305,7 @@ class GreenhouseAdapter(SiteAdapter):
                 url=url,
             )
 
-        raise AdapterError(
-            f"Could not extract job posting for {board}/{job_id}"
-        )
+        raise AdapterError(f"Could not extract job posting for {board}/{job_id}")
 
     async def _discover_board(self, job_id: str, ctx: AdapterContext) -> str | None:
         """Try to discover the Greenhouse board name from an embed page.
@@ -316,6 +324,8 @@ class GreenhouseAdapter(SiteAdapter):
         if match:
             # Convert company name to board slug: lowercase, spaces->hyphens
             company = match.group(1).strip()
-            return company.lower().replace(" ", "-").replace("&", "and").replace(".", "")
+            return (
+                company.lower().replace(" ", "-").replace("&", "and").replace(".", "")
+            )
 
         return None

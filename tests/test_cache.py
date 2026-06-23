@@ -2,16 +2,19 @@
 
 Tests the pure functions used by the freshness-aware cache revalidation
 system. These tests do NOT require Valkey or Docker — they test only
-the stateless utility functions in fetch.py.
+the stateless utility functions in cache.py.
 """
 
 import hashlib
 import json
 import os
+import sys
 from unittest.mock import patch
 
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "scraper-svc"))
+
 # Import the module under test
-from scraper.fetch import (
+from scraper.cache import (
     _compute_content_hash,
     _enrich_cache_entry,
     _merge_cache_metadata,
@@ -123,14 +126,12 @@ class TestParseDomainTtls:
 
     def test_valid_json(self):
         raw = '{"news.ycombinator.com": 300, "docs.python.org": 86400}'
-        with patch.dict(os.environ, {"SCRAPE_CACHE_DOMAIN_TTLS": raw}, clear=False):
+        with patch("scraper.cache._settings.scrape_cache_domain_ttls", raw):
             result = _parse_domain_ttls()
             assert result == {"news.ycombinator.com": 300, "docs.python.org": 86400}
 
     def test_invalid_json_returns_empty(self):
-        with patch.dict(
-            os.environ, {"SCRAPE_CACHE_DOMAIN_TTLS": "not-json"}, clear=False
-        ):
+        with patch("scraper.cache._settings.scrape_cache_domain_ttls", "not-json"):
             assert _parse_domain_ttls() == {}
 
 
@@ -139,25 +140,25 @@ class TestParseDomainTtls:
 
 class TestResolveCacheTtl:
     def test_default_ttl_when_no_domain_match(self):
-        with patch.dict(os.environ, {"SCRAPE_CACHE_DOMAIN_TTLS": "{}"}, clear=False):
+        with patch("scraper.cache._settings.scrape_cache_domain_ttls", "{}"):
             ttl = _resolve_cache_ttl("https://example.com/page")
             assert ttl == 3600
 
     def test_matches_root_domain_exactly(self):
         raw = json.dumps({"example.com": 1800})
-        with patch.dict(os.environ, {"SCRAPE_CACHE_DOMAIN_TTLS": raw}, clear=False):
+        with patch("scraper.cache._settings.scrape_cache_domain_ttls", raw):
             ttl = _resolve_cache_ttl("https://example.com/page")
             assert ttl == 1800
 
     def test_longest_suffix_match_wins(self):
         raw = json.dumps({"python.org": 7200, "docs.python.org": 86400})
-        with patch.dict(os.environ, {"SCRAPE_CACHE_DOMAIN_TTLS": raw}, clear=False):
+        with patch("scraper.cache._settings.scrape_cache_domain_ttls", raw):
             ttl = _resolve_cache_ttl("https://docs.python.org/3/")
             assert ttl == 86400  # Longer match wins
 
     def test_subdomain_matches_parent(self):
         raw = json.dumps({"python.org": 7200})
-        with patch.dict(os.environ, {"SCRAPE_CACHE_DOMAIN_TTLS": raw}, clear=False):
+        with patch("scraper.cache._settings.scrape_cache_domain_ttls", raw):
             ttl = _resolve_cache_ttl("https://docs.python.org/3/")
             assert ttl == 7200
 
@@ -167,16 +168,16 @@ class TestResolveCacheTtl:
 
     def test_clamps_to_min_ttl(self):
         with (
-            patch("scraper.fetch.SCRAPE_CACHE_TTL", 10),
-            patch("scraper.fetch.SCRAPE_CACHE_MIN_TTL", 60),
+            patch("scraper.cache.SCRAPE_CACHE_TTL", 10),
+            patch("scraper.cache.SCRAPE_CACHE_MIN_TTL", 60),
         ):
             ttl = _resolve_cache_ttl("https://example.com")
             assert ttl == 60  # Clamped from 10 to 60
 
     def test_clamps_to_max_ttl(self):
         with (
-            patch("scraper.fetch.SCRAPE_CACHE_TTL", 999999),
-            patch("scraper.fetch.SCRAPE_CACHE_MAX_TTL", 86400),
+            patch("scraper.cache.SCRAPE_CACHE_TTL", 999999),
+            patch("scraper.cache.SCRAPE_CACHE_MAX_TTL", 86400),
         ):
             ttl = _resolve_cache_ttl("https://example.com")
             assert ttl == 86400  # Clamped from 999999 to 86400
