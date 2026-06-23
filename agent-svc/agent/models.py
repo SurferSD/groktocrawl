@@ -727,6 +727,21 @@ class SearchResponse(BaseModel):
     output: dict[str, Any] | None = None  # Present only when output_schema provided
 
 
+class FindSimilarRequest(BaseModel):
+    url: str
+    limit: int = 10
+    search_mode: str = "qdrant"  # "qdrant" | "web"
+    contents: ContentsOptions | None = None
+
+
+class FindSimilarResponse(BaseModel):
+    success: bool = True
+    data: list[SearchResult]
+    query_url: str
+    search_mode: str
+    latency_ms: float
+
+
 class MapRequest(BaseModel):
     url: str
     limit: int = 100
