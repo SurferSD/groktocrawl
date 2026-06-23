@@ -456,7 +456,7 @@ def extract_extras(html: str, options) -> dict:
     if options.links is not None and options.links > 0:
         links: list[str] = []
         for a in soup.find_all("a", href=True):
-            href = a["href"].strip()
+            href = str(a["href"]).strip()
             # Skip non-web links
             if href.startswith(("mailto:", "javascript:", "tel:", "#")):
                 continue
@@ -476,7 +476,7 @@ def extract_extras(html: str, options) -> dict:
     if options.imageLinks is not None and options.imageLinks > 0:
         images: list[str] = []
         for img in soup.find_all("img", src=True):
-            src = img["src"].strip()
+            src = str(img["src"]).strip()
             if not src or src.startswith("data:"):
                 continue
             if src not in images:

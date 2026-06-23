@@ -302,7 +302,7 @@ async def cancel_agent(request: Request, job_id: str) -> AgentCancelResponse:
 @router.post("/v2/crawl", response_model=CrawlCreateResponse)
 async def create_crawl(
     request: Request, body: CrawlRequest, response: Response
-) -> CrawlCreateResponse:
+) -> CrawlCreateResponse:  # type: ignore[return-value]  # returns StreamingResponse when stream=True
     # ── Per-client rate limit check (VAL-CONC-047) ────────────
     client_ip = _get_client_ip(request)
     rate_limiter = request.app.state.rate_limiter
@@ -1104,7 +1104,7 @@ async def find_similar(request: Request, body: FindSimilarRequest):
     latency = (time.monotonic() - start) * 1000
 
     return FindSimilarResponse(
-        data=results,
+        data=results,  # type: ignore[arg-type]
         query_url=body.url,
         search_mode=body.search_mode,
         latency_ms=round(latency, 1),

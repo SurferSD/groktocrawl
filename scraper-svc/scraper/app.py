@@ -292,7 +292,7 @@ async def scrape(request: ScrapeRequest):
                     # Full verbosity: bypass readability, render entire page
                     from markdownify import markdownify as md
 
-                    soup: None = None
+                    soup = None  # type: ignore[assignment]
                     try:
                         from bs4 import BeautifulSoup as _BS
 
