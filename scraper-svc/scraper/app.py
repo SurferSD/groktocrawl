@@ -302,6 +302,7 @@ async def scrape(request: ScrapeRequest):
                     if soup:
                         markdown = md(str(soup), heading_style="ATX", strip=[])
                     else:
+                        # Fallback: strip HTML tags with regex
                         import re
                         markdown = re.sub(r"<[^>]+>", "", raw_html).strip()
                 elif include_sections or exclude_sections:

@@ -632,6 +632,19 @@ class Client:
             return {"_stream": resp}
         return self._request("POST", "/answer", json_data=data)
 
+    def find_similar(
+        self,
+        url: str,
+        limit: int = 10,
+        search_mode: str = "qdrant",
+    ) -> dict[str, Any]:
+        """Find semantically similar pages for a given URL."""
+        return self._request(
+            "POST",
+            "/find-similar",
+            json_data={"url": url, "limit": limit, "search_mode": search_mode},
+        )
+
     def create_extract(self, urls, prompt=None, schema=None):
         data = {"urls": urls}
         if prompt:
@@ -1186,6 +1199,48 @@ def cmd_answer(client: Client, args: argparse.Namespace) -> None:
             print("\nCitations:")
             for c in citations:
                 print("  [{}] {}".format(c["index"], c["url"]))
+
+
+def cmd_find_similar(client: Client, args: argparse.Namespace) -> None:
+    """Find semantically similar pages for a given URL."""
+    if client.dry_run:
+        emit(
+            f"[dry-run] Would find similar pages for: {args.url}",
+            {"dry_run": True, "command": "find-similar", "url": args.url},
+        )
+        return
+
+    try:
+        result = client.find_similar(
+            url=args.url,
+            limit=args.limit,
+            search_mode=args.search_mode,
+        )
+    except ApiError as e:
+        die(str(e))
+
+    data = result.get("data", [])
+
+    if JSON_OUTPUT:
+        emit("", {"results": data, "query_url": args.url, "search_mode": args.search_mode})
+        return
+
+    if not data:
+        log(f"No similar pages found for {args.url}")
+        return
+
+    print(f"Similar pages for: {args.url}\n")
+    for i, item in enumerate(data[: args.limit], 1):
+        if isinstance(item, dict):
+            title = item.get("title", "(no title)")
+            url = item.get("url", "")
+            desc = item.get("description", "")
+            print(f"{i}. {title}")
+            if url:
+                print(f"   {url}")
+            if desc:
+                print(f"   {desc[:150]}")
+            print()
 
 
 def cmd_download(client: Client, args: argparse.Namespace) -> None:
@@ -1965,6 +2020,20 @@ def make_parser() -> argparse.ArgumentParser:
     p_answer.add_argument(
         "-o", "--output-dir", help="Output directory for pyramid (implies --pyramid)"
     )
+    p_find_similar = subparsers.add_parser(
+        "find-similar", help="Find semantically similar pages by URL"
+    )
+    p_find_similar.add_argument("url", help="URL to find similar pages for")
+    p_find_similar.add_argument(
+        "--limit", "-l", type=int, default=10, help="Max results (default: 10)"
+    )
+    p_find_similar.add_argument(
+        "--search-mode",
+        choices=["qdrant", "web"],
+        default="qdrant",
+        help="Search mode: qdrant (local vector index) or web (open web search + rerank)",
+    )
+
     p_llmstxt = subparsers.add_parser(
         "generate-llmstxt", help="Generate an llms.txt for a website"
     )
@@ -2038,6 +2107,7 @@ def main() -> None:
         "parse": cmd_parse,
         "generate-llmstxt": cmd_generate_llmstxt,
         "answer": cmd_answer,
+        "find-similar": cmd_find_similar,
     }
 
     handler = dispatch.get(args.command)

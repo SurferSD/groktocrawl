@@ -728,6 +728,21 @@ class SearchResponse(BaseModel):
     query_variations: list[str] | None = None  # Present for deep search type
 
 
+class FindSimilarRequest(BaseModel):
+    url: str
+    limit: int = 10
+    search_mode: str = "qdrant"  # "qdrant" | "web"
+    contents: ContentsOptions | None = None
+
+
+class FindSimilarResponse(BaseModel):
+    success: bool = True
+    data: list[SearchResult]
+    query_url: str
+    search_mode: str
+    latency_ms: float
+
+
 class MapRequest(BaseModel):
     url: str
     limit: int = 100

@@ -359,7 +359,7 @@ Once set, every API call must include an `Authorization` or `X-API-Key` header:
 ```bash
 curl -X POST http://localhost:8080/v2/scrape \
   -H "Content-Type: application/json" \
-  -H "Authorization: Bearer sk-your-secret-key-here" \
+  -H "Authorization: Bearer your-api-key-here"  # gitleaks:allow
   -d '{"url": "https://example.com"}'
 
 # Or via CLI:
