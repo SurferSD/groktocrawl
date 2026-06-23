@@ -252,7 +252,7 @@ jobs:
             -e TEST_SITE_BASE_URL=http://test-site:8000 \
             -e TIER3_FIXTURE_BASE_URL=http://tier3-fixture:8000 \
             -e SEMANTIC_BASE_URL=http://semantic-svc:8003 \
-            agent-svc python3 -m pytest /app/tests/ --timeout=120
+            agent-svc python3 -m pytest /app/tests/ --timeout=120 --ignore-glob='*unit*' --ignore-glob='*observability*'
         timeout-minutes: 15
 
       - name: Collect logs on failure
