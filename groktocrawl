@@ -1724,8 +1724,8 @@ def make_parser() -> argparse.ArgumentParser:
     p_search.add_argument(
         "--search-type",
         default="fast",
-        choices=["fast", "rich"],
-        help="Search mode: fast (default, <1s) or rich (scraped excerpts + synthesis, 1-3s)",
+        choices=["fast", "rich", "deep"],
+        help="Search mode: fast (default, <1s), rich (scraped excerpts + synthesis, 1-3s), or deep (multi-pass with gap analysis)",
     )
     p_search.add_argument(
         "--output-schema",

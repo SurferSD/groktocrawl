@@ -372,6 +372,24 @@ async def search(request: Request, body: SearchRequest):
 
     searxng = SearXNGClient(request.app.state.searxng_url)
     try:
+        # Deep mode: multi-pass search with gap analysis and follow-up queries
+        if body.search_type == "deep":
+            from .research import run_deep_search
+
+            deep_result = await run_deep_search(
+                query=body.query,
+                limit=body.limit,
+                searxng_url=request.app.state.searxng_url,
+                llm_base_url=request.app.state.llm_base_url,
+                llm_api_key=request.app.state.llm_api_key,
+                llm_model=request.app.state.llm_model,
+            )
+            search_results = deep_result["results"]
+            data: dict[str, list] = {"web": search_results, "images": [], "news": []}
+            return SearchResponse(
+                data=data, query_variations=deep_result.get("query_variations", [])
+            )
+
         # Vector-only mode: query Qdrant, no SearXNG
         if body.retrieval_mode == "vector":
             from .semantic_client import SemanticClient

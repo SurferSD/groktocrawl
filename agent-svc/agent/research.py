@@ -1016,6 +1016,135 @@ When system_prompt is provided, use it to guide your preferences (source selecti
 recency, strictness)."""
 
 
+DEEP_SEARCH_GAP_PROMPT = """You are a search coverage analyst. Given search results for a query,
+identify what sub-topics, angles, or specific aspects are NOT covered.
+Suggest 2-4 additional search queries that would fill these gaps.
+Return ONLY a JSON array of query strings. No other text.
+
+Example: ["alternative approach to X", "Y aspect of Z", "comparison between A and B"]"""
+
+
+async def run_deep_search(
+    query: str,
+    limit: int,
+    searxng_url: str = "http://searxng:8080",
+    llm_base_url: str = "https://api.openai.com/v1",
+    llm_api_key: str = "",
+    llm_model: str = "gpt-4o-mini",
+) -> dict:
+    """Multi-pass search with LLM gap analysis and follow-up queries.
+
+    Algorithm:
+    1. Initial SearXNG search with primary query
+    2. LLM evaluates result titles/descriptions for coverage gaps
+    3. Formulates 2-4 follow-up queries targeting identified gaps
+    4. Runs all follow-up queries in parallel via asyncio.gather
+    5. Merges all results, URL-dedup (first occurrence wins)
+    6. Returns SearchResult list + query_variations
+    """
+    import asyncio
+
+    searxng = SearXNGClient(searxng_url)
+    llm = LLMClient(llm_base_url, llm_api_key, llm_model)
+
+    try:
+        # 1. Initial search
+        results, _health = await searxng.search(query, limit=max(limit, 5))
+
+        if not results:
+            return {"results": [], "query_variations": [query]}
+
+        # 2. Gap analysis via LLM
+        # Build context from result URLs, titles, descriptions (no scraping)
+        result_summaries = [
+            {
+                "title": r.get("title", ""),
+                "url": r.get("url", ""),
+                "description": r.get("description", ""),
+            }
+            for r in results[:limit]
+        ]
+        context = json.dumps(result_summaries)
+
+        gap_prompt = (
+            f'Search query: "{query}"\n\n'
+            f"Current search results:\n{context}\n\n"
+            f"What sub-topics, angles, or specific aspects are NOT covered by these results? "
+            f"Suggest 2-4 additional search queries that would fill these gaps. "
+            f"Return ONLY a JSON array of query strings. No other text."
+        )
+
+        follow_ups: list[str] = []
+        try:
+            gap_result = await llm.generate(
+                system_prompt=DEEP_SEARCH_GAP_PROMPT,
+                user_prompt=gap_prompt,
+            )
+            if gap_result and not gap_result.startswith("Error:"):
+                # Parse the JSON array from the LLM response
+                cleaned = gap_result.strip()
+                cleaned = cleaned.removeprefix("```json")
+                cleaned = cleaned.removeprefix("```")
+                cleaned = cleaned.removesuffix("```")
+                parsed = json.loads(cleaned)
+                if isinstance(parsed, list):
+                    follow_ups = [str(q) for q in parsed if q and str(q).strip()]
+        except (json.JSONDecodeError, Exception) as e:
+            logger.warning("Deep search gap analysis failed: %s", e)
+
+        # 3. Run all queries (original + follow-ups) in parallel
+        all_queries = [query] + follow_ups
+
+        async def search_one(q: str) -> list[dict]:
+            r, _ = await searxng.search(q, limit=limit)
+            return r
+
+        all_result_lists = [results]
+        if follow_ups:
+            follow_up_results = await asyncio.gather(
+                *[search_one(q) for q in follow_ups], return_exceptions=True
+            )
+            for fr in follow_up_results:
+                if isinstance(fr, list):
+                    all_result_lists.append(fr)
+                elif isinstance(fr, Exception):
+                    logger.warning("Follow-up search failed: %s", fr)
+
+        # 4. Merge and URL-dedup (first occurrence wins)
+        from .models import SearchResult
+
+        seen_urls: set[str] = set()
+        merged: list[SearchResult] = []
+        for result_list in all_result_lists:
+            for r in result_list:
+                url = r.get("url", "")
+                if url and url not in seen_urls:
+                    seen_urls.add(url)
+                    merged.append(
+                        SearchResult(
+                            url=url,
+                            title=r.get("title", ""),
+                            description=r.get("description", ""),
+                        )
+                    )
+
+        logger.info(
+            "Deep search: %d unique results from %d queries for: %s",
+            len(merged),
+            len(all_queries),
+            query,
+        )
+
+        return {
+            "results": merged[:limit],
+            "query_variations": all_queries,
+        }
+
+    finally:
+        await searxng.close()
+        await llm.close()
+
+
 async def run_rich_search(
     search_results: list[dict],
     query: str,

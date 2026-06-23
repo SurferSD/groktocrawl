@@ -202,13 +202,13 @@ def test_search_rich_with_output_schema():
     assert "grounding" in output
 
 
-def test_search_unknown_type_falls_back_to_fast():
-    """An unrecognized search_type should be treated as fast (default)."""
+def test_search_deep_mode_returns_query_variations():
+    """deep mode performs multi-pass search and returns query_variations."""
     resp = httpx.post(
         AGENT + "/v2/search",
         json={
-            "query": "fixture",
-            "limit": 1,
+            "query": "fixture pricing",
+            "limit": 3,
             "search_type": "deep",
         },
         timeout=120,
@@ -216,8 +216,15 @@ def test_search_unknown_type_falls_back_to_fast():
     assert resp.status_code == 200
     payload = resp.json()
     assert payload["success"] is True
-    # Should not crash — treated as fast mode
     assert "web" in payload["data"]
+    results = payload["data"]["web"]
+    assert isinstance(results, list)
+    # output should be None for deep (no scraping or synthesis)
+    assert payload.get("output") is None
+    # query_variations should be present for deep mode
+    assert payload.get("query_variations") is not None
+    assert isinstance(payload["query_variations"], list)
+    assert len(payload["query_variations"]) >= 1  # at least the original query
 
 
 def test_activity_endpoint_structure():
