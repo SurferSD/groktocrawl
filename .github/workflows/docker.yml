@@ -121,7 +121,7 @@ jobs:
   integration-tests:
     name: Integration Tests
     needs: build-and-push
-    runs-on: [self-hosted, groktocrawl, docker]
+    runs-on: [self-hosted, groktopus, docker]
     steps:
       - uses: actions/checkout@v7
 
