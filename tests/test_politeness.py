@@ -34,6 +34,14 @@ def _disable_valkey():
             "scraper.politeness.PolitenessManager._robots_cache_load",
             return_value=None,
         ),
+        patch(
+            "scraper.politeness.PolitenessManager._get_valkey_last_request",
+            return_value=0.0,
+        ),
+        patch(
+            "scraper.politeness.PolitenessManager._set_valkey_last_request",
+            return_value=None,
+        ),
     ):
         yield
 

@@ -201,7 +201,7 @@ class TestCrawlRequest:
         from agent.models import CrawlRequest
 
         r = CrawlRequest(url="https://example.com")
-        assert r.max_pages == 10
+        assert r.max_pages == 0
         assert r.max_depth == 2
         assert r.regex_on_full_url is False
         assert r.verbose is False

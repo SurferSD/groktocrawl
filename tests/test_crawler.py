@@ -1601,13 +1601,12 @@ class TestCrawlRequestValidation:
         req2 = CrawlRequest(url="http://example.com", max_pages=100)
         assert req2.max_pages == 100
 
-    def test_max_pages_zero_rejected(self):
-        """max_pages=0 raises validation error."""
+    def test_max_pages_zero_accepted(self):
+        """max_pages=0 means unlimited and is accepted (ge=0)."""
         from agent.models import CrawlRequest
-        from pydantic import ValidationError
 
-        with pytest.raises(ValidationError, match="max_pages"):
-            CrawlRequest(url="http://example.com", max_pages=0)
+        req = CrawlRequest(url="http://example.com", max_pages=0)
+        assert req.max_pages == 0
 
     def test_max_depth_non_negative_accepts_valid(self):
         """max_depth >= 0 is accepted."""
@@ -1634,12 +1633,12 @@ class TestCrawlRequestValidation:
         req = CrawlRequest(url="http://example.com")
         assert req.max_depth == 2
 
-    def test_max_pages_default_is_ten(self):
-        """Default max_pages is 10."""
+    def test_max_pages_default_is_zero(self):
+        """Default max_pages is 0 (unlimited)."""
         from agent.models import CrawlRequest
 
         req = CrawlRequest(url="http://example.com")
-        assert req.max_pages == 10
+        assert req.max_pages == 0
 
     def test_sitemap_default_is_include(self):
         """Default sitemap mode is 'include'."""
