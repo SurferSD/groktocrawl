@@ -1,11 +1,11 @@
 # Code Quality CI — dead code, unused deps, duplicate detection, type checking
 #
-# Runs vulture (dead code), deptry (unused dependencies),
-# jscpd (duplicate code), and mypy (type checking) on every PR
-# and push to main.
+# Runs vulture (dead code), deptry (unused dependencies), mypy (type checking),
+# ruff (TODO/FIXME lint), jscpd (duplicate code), and gitleaks (secret scanning)
+# on every PR and push to main.
 #
-# These are fast checks (~10-20s each) that catch issues agents
-# might introduce during development.
+# Python checks (vulture, deptry, mypy, ruff) share a single runner to avoid
+# redundant setup overhead. jscpd (npm) and gitleaks (binary) use separate runners.
 
 name: Code Quality
 
@@ -16,30 +16,24 @@ on:
     branches: [main]
 
 jobs:
-  dead-code:
+  python-checks:
+    name: Python Checks
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
-      - name: Install vulture
-        run: pip install vulture
+
+      - name: Install tooling
+        run: pip install vulture deptry mypy ruff
+
       - name: Run vulture (dead code detection)
         run: |
           vulture . \
             --exclude ".venv,.venv-sys,htmlcov,graphify-out,droid-wiki,node_modules,dist,build,__pycache__,*.egg-info,.git" \
             --min-confidence 90
 
-  unused-deps:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-python@v6
-        with:
-          python-version: "3.12"
-      - name: Install deptry
-        run: pip install deptry
       - name: Run deptry per service (unused dependency detection)
         run: |
           for svc in agent-svc scraper-svc semantic-svc browser-svc parse-svc portal-svc; do
@@ -48,7 +42,18 @@ jobs:
             deptry "$svc" --per-rule-ignores '{"DEP002":{"allowlist":["pytest","pytest-cov","pytest-xdist","httpx","vulture","deptry"]}}' || true
           done
 
+      - name: Run mypy (type checking)
+        run: |
+          PYTHONPATH=agent-svc:scraper-svc:search-svc:llm-svc:parse-svc:portal-svc:browser-svc:. \
+          mypy agent-svc/agent scraper-svc/scraper search-svc/search_svc \
+               llm-svc/llm_svc parse-svc/parse_svc portal-svc/portal \
+               browser-svc/browser_svc semantic-svc common/
+
+      - name: Run ruff TD check (TODO/FIXME enforcement)
+        run: python3 -m ruff check --select TD
+
   duplicate-code:
+    name: Duplicate Code
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -65,23 +70,8 @@ jobs:
             --reporters console \
             .
 
-  type-check:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-python@v6
-        with:
-          python-version: "3.12"
-      - name: Install mypy
-        run: pip install mypy
-      - name: Run mypy (type checking)
-        run: |
-          PYTHONPATH=agent-svc:scraper-svc:search-svc:llm-svc:parse-svc:portal-svc:browser-svc:. \
-          mypy agent-svc/agent scraper-svc/scraper search-svc/search_svc \
-               llm-svc/llm_svc parse-svc/parse_svc portal-svc/portal \
-               browser-svc/browser_svc semantic-svc common/
-
-  gitleaks:
+  secret-scan:
+    name: Secret Scanning
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -91,15 +81,3 @@ jobs:
           gitleaks version
       - name: Run gitleaks (secret scanning)
         run: gitleaks detect --no-git --verbose --redact
-
-  ruff-lint:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-python@v6
-        with:
-          python-version: "3.12"
-      - name: Install ruff
-        run: pip install ruff
-      - name: Run ruff TD check (TODO/FIXME enforcement)
-        run: python3 -m ruff check --select TD
