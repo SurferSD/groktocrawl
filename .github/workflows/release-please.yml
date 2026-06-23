@@ -1,0 +1,35 @@
+# Release Please — automated changelog generation and version management
+# On merge to main, creates/updates a release PR with changelog entries.
+# When the release PR is merged, creates a GitHub release and version tag.
+#
+# See: https://github.com/googleapis/release-please-action
+
+name: Release Please
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  release-please:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: googleapis/release-please-action@v5
+        with:
+          release-type: python
+          package-name: groktocrawl
+          changelog-types: |
+            [
+              {"type":"feat","section":"Features","hidden":false},
+              {"type":"fix","section":"Bug Fixes","hidden":false},
+              {"type":"perf","section":"Performance Improvements","hidden":false},
+              {"type":"docs","section":"Documentation","hidden":false},
+              {"type":"ci","section":"CI/CD","hidden":false},
+              {"type":"refactor","section":"Refactoring","hidden":false},
+              {"type":"test","section":"Tests","hidden":false},
+              {"type":"chore","section":"Chores","hidden":false}
+            ]

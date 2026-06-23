@@ -7,12 +7,12 @@ the site's key pages.
 
 import logging
 import re
-from urllib.parse import urljoin
 
 import httpx
-from bs4 import BeautifulSoup
 
 from common.url import extract_domain
+
+from .link_extractor import extract_links, filter_links
 
 logger = logging.getLogger(__name__)
 
@@ -50,10 +50,7 @@ def _is_boilerplate(line: str) -> bool:
     lower = line.lower().strip()
     if len(lower) < 30:
         return True  # Very short lines are rarely good descriptions
-    for signal in _BOILERPLATE_SIGNALS:
-        if signal in lower:
-            return True
-    return False
+    return any(signal in lower for signal in _BOILERPLATE_SIGNALS)
 
 
 def _extract_description(text: str, max_chars: int = 300) -> str:
@@ -127,10 +124,11 @@ def _extract_description(text: str, max_chars: int = 300) -> str:
 
 
 async def discover_pages(url: str, max_pages: int = 50) -> list[str]:
-    """Discover page URLs on a site by fetching the homepage and finding same-domain links."""
-    discovered: list[str] = []
-    seen = set()
+    """Discover page URLs on a site by fetching the homepage and finding same-domain links.
 
+    Uses the shared LinkExtractor module for HTML link extraction and filtering,
+    replacing the previous inline BeautifulSoup parsing.
+    """
     try:
         async with httpx.AsyncClient(follow_redirects=True, timeout=15) as client:
             resp = await client.get(url)
@@ -138,29 +136,23 @@ async def discover_pages(url: str, max_pages: int = 50) -> list[str]:
                 logger.warning("Failed to fetch %s: %d", url, resp.status_code)
                 return [url]  # fallback: just return the input URL
 
-            soup = BeautifulSoup(resp.text, "html.parser")
+            # Use the shared LinkExtractor for link extraction and filtering.
+            # Pass the domain-only base URL to match previous urljoin(base_url, href)
+            # behavior where base_url was the scheme+domain without path.
+            site_base = extract_domain(url, include_scheme=True)
+            all_links = extract_links(resp.text, site_base)
+
+            # Filter to same-host only (backward compatible — external links excluded)
             base_domain = extract_domain(url)
-            base_url = extract_domain(url, include_scheme=True)
-            for a in soup.find_all("a", href=True):
-                href = a["href"].strip()
-                full_url = urljoin(base_url, href)
+            filtered = filter_links(
+                all_links,
+                base_domain=base_domain,
+                allow_subdomains=False,
+                allow_external_links=False,
+            )
 
-                # Skip external links, anchors, mailto, etc.
-                fd = extract_domain(full_url)
-                if fd and fd != base_domain:
-                    continue
-                from urllib.parse import urlparse
-
-                if not urlparse(full_url).scheme.startswith("http"):
-                    continue
-                if full_url in seen:
-                    continue
-
-                seen.add(full_url)
-                discovered.append(full_url)
-
-                if len(discovered) >= max_pages:
-                    break
+            # Apply max_pages limit (LinkExtractor returns links in discovery order)
+            discovered = filtered[:max_pages]
 
     except Exception as e:
         logger.warning("Page discovery failed for %s: %s", url, e)
@@ -250,7 +242,7 @@ def generate_llms_txt(site_url: str, pages: list[dict]) -> str:
     )
     lines.append("")
 
-    for i, page in enumerate(pages):
+    for _i, page in enumerate(pages):
         title = page.get("title", "")
         url = page.get("url", "")
         desc = page.get("description", "")

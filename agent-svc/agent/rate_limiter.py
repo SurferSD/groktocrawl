@@ -25,7 +25,7 @@ class SlidingWindowRateLimiter:
     issues do not block legitimate traffic.
     """
 
-    def __init__(self, redis, limit: int, window_seconds: int):
+    def __init__(self, redis: object, limit: int, window_seconds: int) -> None:
         self.redis = redis
         self.limit = limit
         self.window = window_seconds
@@ -45,9 +45,9 @@ class SlidingWindowRateLimiter:
         now = int(time.time())
         window_key = f"rate_limit:search:{key}:{now // self.window}"
         try:
-            count = self.redis.incr(window_key)
+            count = self.redis.incr(window_key)  # type: ignore[attr-defined]
             if count == 1:
-                self.redis.expire(window_key, self.window * 2)
+                self.redis.expire(window_key, self.window * 2)  # type: ignore[attr-defined]
             remaining = max(0, self.limit - count)
             return count <= self.limit, remaining
         except Exception as e:

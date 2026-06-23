@@ -2,16 +2,18 @@
 
 **Self-hosted Firecrawl alternative with semantic search, grounded Q&A, site adapters, and an autonomous research agent. MIT licensed. One `docker compose up` and you're running.**
 
-GroktoCrawl implements the Firecrawl v2 API surface — scrape, search, map, crawl, extract, browser sessions, and monitors — plus capabilities Firecrawl doesn't offer: a persistent **semantic search engine** with Qdrant vector index, a **grounded Q&A endpoint** with citations, a **web portal** for human users, site **adapters for GitHub/Substack/Reddit/YouTube/Bluesky/Gutenberg/Greenhouse/AshbyHQ**, an **intelligent scrape cache** with ETag/Last-Modified revalidation, and a full **observability stack** with health probes and Prometheus metrics. Runs entirely in Docker on your own hardware. Bring your own LLM or use the built-in fixtures.
+GroktoCrawl implements the Firecrawl v2 API surface — scrape, search, map, crawl, extract, browser sessions, and monitors — plus capabilities Firecrawl doesn't offer: a persistent **semantic search engine** with Qdrant vector index, a **grounded Q&A endpoint** with citations, a **web portal** for human users, site **adapters for GitHub/Substack/Reddit/YouTube/Bluesky/Gutenberg/Greenhouse/AshbyHQ/Shopify**, an **intelligent scrape cache** with ETag/Last-Modified revalidation, and a full **observability stack** with health probes and Prometheus metrics. Runs entirely in Docker on your own hardware. Bring your own LLM or use the built-in fixtures.
 
 ## Quick Start
 
 ```bash
 cp .env.sample .env
-docker compose up --build -d
+docker compose --profile fixture up --build -d
 ```
 
-Eight containers start. The stack includes SearXNG for real web search, a smart scraper, and an Ofelia-scheduled monitor system.
+Eight containers start. Add `--profile fixture` to also start a built-in LLM fixture and test site — useful for evaluation without an API key. Omit it for production (configure a real LLM in `.env` instead).
+
+The stack includes a SearXNG-compatible search service, a smart scraper, and an Ofelia-scheduled monitor system.
 
 ```bash
 # CLI
@@ -51,26 +53,35 @@ LLM_MODEL=llama3.2
 flowchart TD
     subgraph compose["docker-compose.yml"]
         valkey[("valkey<br/>(queue + storage)")]
-        searxng["searxng<br/>(web search)"]
+        qdrant[("qdrant<br/>(vector index)")]
+        searxng["slopsearx<br/>(web search)"]
         scraper("scraper-svc<br/>(smart fetch)")
         browser["browser-svc<br/>(Playwright sessions)"]
+        semantic["semantic-svc<br/>(embeddings + near-dup)"]
         agent("agent-svc<br/>(FastAPI + workers)")
+        portal["portal-svc<br/>(web UI)"]
         ofelia["ofelia<br/>(cron scheduler)"]
 
         valkey --- agent
+        qdrant --- semantic
         searxng --- agent
         scraper --- agent
+        semantic --- agent
         browser --- agent
+        portal --> agent
         ofelia -.->|docker exec| agent
     end
-    llm_provider("LLM Provider<br/>(DeepSeek / OpenAI / Ollama)")
+    llm_provider("LLM Provider<br/>(DeepSeek / OpenAI / Ollama / fixture)")
     llm_provider -.->|LLM_BASE_URL| agent
 
     style valkey fill:#ffe0b0
+    style qdrant fill:#ffe0b0
     style searxng fill:#b0d4ff
     style scraper fill:#b0ffb0
     style browser fill:#d4b0ff
+    style semantic fill:#ffd4b0
     style agent fill:#ffb0b0
+    style portal fill:#b0d0ff
     style ofelia fill:#b0b0b0
 ```
 
@@ -128,11 +139,16 @@ python3 -m pip install requests
 | GET | `/v2/agent/:jobId` | Get agent job status and results |
 | DELETE | `/v2/agent/:jobId` | Cancel an agent job |
 | POST | `/v2/answer` | Grounded Q&A — search, synthesize, cite in one round-trip |
+| GET | `/v2/activity` | List active/processing jobs across all job types |
 | POST | `/v2/extract` | Extract structured data from URLs (with schema) |
 | GET | `/v2/extract/:jobId` | Get extract status and results |
-| POST | `/v2/crawl` | Crawl a website |
-| GET | `/v2/crawl/:jobId` | Get crawl status |
+| POST | `/v2/crawl` | Crawl a website with full feature parity (path filtering, sitemap support, concurrency, dedup, webhooks, SSE streaming) |
+| GET | `/v2/crawl/:jobId` | Get crawl status with pagination, timestamps, and per-page metadata |
 | DELETE | `/v2/crawl/:jobId` | Cancel a crawl |
+| GET | `/v2/crawl/:jobId/errors` | Get per-URL errors and robots-blocked URLs for a crawl |
+| GET | `/v2/crawl/:jobId/stream` | SSE stream of crawl progress (reconnect to in-progress or completed crawls) |
+| GET | `/v2/crawl/active` | List active/processing crawl jobs |
+| POST | `/v2/crawl/params-preview` | Preview crawl parameters derived from a natural-language prompt |
 | POST | `/v2/batch/scrape` | Scrape multiple URLs |
 | POST | `/v2/search` | Search the web with content |
 | POST | `/v2/map` | Discover URLs on a site |
@@ -210,6 +226,10 @@ When `model` is omitted or set to `"default"`, the `LLM_MODEL` from `.env` is us
 
 The agent is powered by a **determined research prompt** that evaluates source quality, synthesizes across multiple pages, detects contradictions, and cites sources by URL. It does not fabricate information — if the available sources don't answer the question, it says so and suggests what would be needed.
 
+## Web Portal
+
+A browser-based UI is available at `http://localhost:8082` when `portal-svc` is running. It provides a chat interface to the agent and answer endpoints, showing source citations and streaming responses inline. The portal is a thin client — all requests route through the agent API.
+
 ## OpenAPI / Swagger Docs
 
 Interactive API documentation is available when the stack is running:
@@ -224,6 +244,14 @@ The spec is auto-generated by FastAPI from the route handlers and Pydantic model
 | Feature | Firecrawl Cloud | Firecrawl Self-Hosted | GroktoCrawl |
 |---------|----------------|----------------------|-------------|
 | Scrape / Crawl / Map / Search | ✅ | ✅ | ✅ |
+| Crawl: path filtering (include/exclude) | ✅ | ✅ | ✅ |
+| Crawl: sitemap modes (include/skip/only) | ✅ | ❌ | ✅ |
+| Crawl: configurable concurrency & delay | ✅ | ✅ | ✅ |
+| Crawl: per-page webhooks & SSE streaming | ✅ | ❌ | ✅ |
+| Crawl: NL-to-params preview | ✅ | ❌ | ✅ |
+| Crawl: content dedup (canonical + hash) | ✅ | ❌ | ✅ |
+| Crawl: maxAge/minAge caching | ✅ | ❌ | ✅ |
+| Crawl: errors & active endpoints | ✅ | ❌ | ✅ |
 | Agent endpoint | ✅ | ❌ | ✅ |
 | Extract (schema-based) | ✅ | ❌ | ✅ |
 | Browser sessions | ✅ | ❌ | ✅ |
@@ -238,7 +266,7 @@ The spec is auto-generated by FastAPI from the route handlers and Pydantic model
 | Semantic search / vector index | ❌ | ❌ | ✅ |
 | Grounded Q&A (/v2/answer) | ❌ | ❌ | ✅ |
 | Web portal for human users | ❌ | ❌ | ✅ |
-| Site adapters (GitHub, Substack, Reddit, YouTube, Bluesky, Gutenberg) | ❌ | ❌ | ✅ |
+| Site adapters (GitHub, Substack, Reddit, YouTube, Bluesky, Gutenberg, Shopify) | ❌ | ❌ | ✅ |
 | Intelligent scrape cache (ETag/Last-Modified) | ❌ | ❌ | ✅ |
 | Politeness protocol (robots.txt, rate limiting) | ❌ | ❌ | ✅ |
 | Proxy support | ❌ | ❌ | ✅ |
@@ -501,6 +529,20 @@ A token with `public_repo` scope is sufficient for public repositories. For priv
 - `jobs.ashbyhq.com/{company}/{uuid}` — individual job page
 
 **Configuration:** None — AshbyHQ requires no API keys.
+
+### Shopify Adapter
+
+`scrape <shopify-url>` extracts blog/article content from Shopify-hosted stores, bypassing the UCP (Universal Commerce Protocol) content-negotiation trap.
+
+| Feature | Details |
+|---------|---------|
+| **URL patterns** | `/blogs/`, `/products/`, `/collections/`, `/pages/` on any domain |
+| **Fallback chain** | readability-lxml with browser UA → Playwright render → generic tier |
+| **Config** | None — no API key required |
+
+Shopify stores return an agent instruction page when they receive `Accept: text/markdown` (UCP commerce API guide). This adapter fetches the page HTML with a standard browser User-Agent and extracts content via readability-lxml, bypassing the trap entirely.
+
+**Configuration:** None — Shopify storefronts serve public content without authentication.
 
 ### Adding a New Adapter
 

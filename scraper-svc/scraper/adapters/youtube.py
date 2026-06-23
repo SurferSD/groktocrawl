@@ -16,7 +16,6 @@ Metadata sources:
 from __future__ import annotations
 
 import logging
-import os
 import re
 from urllib.parse import parse_qs, urlparse
 
@@ -110,15 +109,20 @@ async def _fetch_description(video_id: str) -> str | None:
     url = f"https://www.youtube.com/watch?v={video_id}"
     try:
         async with httpx.AsyncClient(timeout=10) as client:
-            resp = await client.get(url, headers={
-                "User-Agent": (
-                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                    "AppleWebKit/537.36 (KHTML, like Gecko) "
-                    "Chrome/131.0.0.0 Safari/537.36"
-                ),
-            })
+            resp = await client.get(
+                url,
+                headers={
+                    "User-Agent": (
+                        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                        "AppleWebKit/537.36 (KHTML, like Gecko) "
+                        "Chrome/131.0.0.0 Safari/537.36"
+                    ),
+                },
+            )
             if resp.status_code != 200:
-                logger.debug("Description fetch returned %d for %s", resp.status_code, video_id)
+                logger.debug(
+                    "Description fetch returned %d for %s", resp.status_code, video_id
+                )
                 return None
 
             html = resp.text
@@ -170,7 +174,8 @@ async def _fetch_description(video_id: str) -> str | None:
                     if desc:
                         logger.debug(
                             "Description extracted via simpleText for %s (%d chars)",
-                            video_id, len(desc),
+                            video_id,
+                            len(desc),
                         )
                         return desc
 
@@ -182,11 +187,16 @@ async def _fetch_description(video_id: str) -> str | None:
             )
             if meta_match:
                 desc = meta_match.group(1)
-                desc = desc.replace("&#39;", "'").replace("&amp;", "&").replace("&quot;", '"')
+                desc = (
+                    desc.replace("&#39;", "'")
+                    .replace("&amp;", "&")
+                    .replace("&quot;", '"')
+                )
                 if desc:
                     logger.debug(
                         "Description extracted via meta tag for %s (%d chars)",
-                        video_id, len(desc),
+                        video_id,
+                        len(desc),
                     )
                     return desc
 
@@ -248,7 +258,7 @@ async def _fetch_transcript(video_id: str) -> str | None:
             return " ".join(item.text for item in transcript_list)
 
         transcript = await asyncio.to_thread(_get_transcript)
-        return transcript if transcript else None
+        return transcript or None
     except ImportError:
         logger.debug("youtube_transcript_api not installed")
         return None
@@ -325,7 +335,10 @@ async def _fetch_via_browser(
             )
             metadata: dict = {"video_id": video_id}
             if meta_resp.json().get("success"):
-                raw = meta_resp.json().get("result", {}).get("script_result", "{}") or "{}"
+                raw = (
+                    meta_resp.json().get("result", {}).get("script_result", "{}")
+                    or "{}"
+                )
                 import json
 
                 try:
@@ -340,10 +353,7 @@ async def _fetch_via_browser(
             if not body_text:
                 return None
 
-            markdown = (
-                f"# {metadata.get('title', 'YouTube Video')}\n\n"
-                f"{body_text}"
-            )
+            markdown = f"# {metadata.get('title', 'YouTube Video')}\n\n{body_text}"
             return markdown, metadata
 
     except Exception as exc:
@@ -354,8 +364,8 @@ async def _fetch_via_browser(
             try:
                 async with httpx.AsyncClient(timeout=5) as c:
                     await c.delete(f"{browser_svc_url}/browsers/{session_id}")
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("Session cleanup failed for %s: %s", url, e)
 
 
 # ── Adapter class ────────────────────────────────────────────────
@@ -402,6 +412,8 @@ class YouTubeAdapter(SiteAdapter):
         transcript = None
         description = None
         try:
+            t_result: object
+            d_result: object
             t_result, d_result = await asyncio.gather(
                 ctx.with_timeout(_fetch_transcript(video_id), timeout=12),
                 ctx.with_timeout(_fetch_description(video_id), timeout=10),
@@ -427,21 +439,12 @@ class YouTubeAdapter(SiteAdapter):
             )
             title = oembed.get("title", "YouTube Video")
             author = oembed.get("author_name", "")
-            markdown = (
-                f"# {title}\n\n"
-                f"**Channel:** {author}\n\n"
-            )
+            markdown = f"# {title}\n\n**Channel:** {author}\n\n"
             # Insert description section if available
             if description:
                 desc_md = _description_to_markdown(description)
-                markdown += (
-                    f"---\n\n"
-                    f"## Description\n\n{desc_md}\n\n"
-                )
-            markdown += (
-                f"---\n\n"
-                f"## Transcript\n\n{transcript}"
-            )
+                markdown += f"---\n\n## Description\n\n{desc_md}\n\n"
+            markdown += f"---\n\n## Transcript\n\n{transcript}"
             return AdapterResult(
                 success=True,
                 markdown=markdown,
@@ -464,6 +467,4 @@ class YouTubeAdapter(SiteAdapter):
                 url=url,
             )
 
-        raise AdapterError(
-            f"Could not extract content from YouTube video {video_id}"
-        )
+        raise AdapterError(f"Could not extract content from YouTube video {video_id}")

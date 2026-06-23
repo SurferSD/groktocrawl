@@ -19,18 +19,21 @@ os.environ.setdefault("SCRAPER_POLITENESS_ENABLED", "false")
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "scraper-svc"))
 
 # ── Force-disable Valkey cache client for all tests ────────────
-from scraper.politeness import PolitenessManager, PolitenessResult, _DomainState
+from scraper.politeness import PolitenessManager, _DomainState
 
 
 @pytest.fixture(autouse=True)
 def _disable_valkey():
     """Disable Valkey cache client for politeness tests."""
-    with patch(
-        "scraper.politeness.PolitenessManager._robots_cache_store",
-        return_value=None,
-    ), patch(
-        "scraper.politeness.PolitenessManager._robots_cache_load",
-        return_value=None,
+    with (
+        patch(
+            "scraper.politeness.PolitenessManager._robots_cache_store",
+            return_value=None,
+        ),
+        patch(
+            "scraper.politeness.PolitenessManager._robots_cache_load",
+            return_value=None,
+        ),
     ):
         yield
 
@@ -114,7 +117,10 @@ class TestRobotsTxtParsing:
             "User-agent: *\nSitemap: https://example.com/sitemap.xml",
             mgr._domains["example.com"],
         )
-        assert "https://example.com/sitemap.xml" in mgr._domains["example.com"].robots_sitemaps
+        assert (
+            "https://example.com/sitemap.xml"
+            in mgr._domains["example.com"].robots_sitemaps
+        )
 
     def test_user_agent_specific_section(self):
         """Only sections matching * or groktocrawl are applied."""
@@ -156,6 +162,7 @@ class TestPolitenessCheck:
             crawl_delay=1.0,
         )
         import re
+
         state.robots_disallowed_paths = [re.compile(r"^/private")]
         mgr._domains["example.com"] = state
 
@@ -173,6 +180,7 @@ class TestPolitenessCheck:
             crawl_delay=1.0,
         )
         import re
+
         state.robots_disallowed_paths = [re.compile(r"^/private")]
         mgr._domains["example.com"] = state
 
@@ -184,7 +192,6 @@ class TestPolitenessCheck:
         """A second request within crawl_delay returns delay."""
         mgr = PolitenessManager()
         mgr._enabled = True
-        import re
         state = _DomainState(
             robots_cached_at=time.time(),
             crawl_delay=5.0,
@@ -203,7 +210,6 @@ class TestPolitenessCheck:
         """A request after crawl_delay has elapsed proceeds."""
         mgr = PolitenessManager()
         mgr._enabled = True
-        import re
         state = _DomainState(
             robots_cached_at=time.time(),
             crawl_delay=0.1,
@@ -263,13 +269,22 @@ class TestPolitenessMetadata:
 
 class TestDomainExtraction:
     def test_simple_domain(self):
-        assert PolitenessManager._domain_from_url("https://example.com/path") == "example.com"
+        assert (
+            PolitenessManager._domain_from_url("https://example.com/path")
+            == "example.com"
+        )
 
     def test_with_port(self):
-        assert PolitenessManager._domain_from_url("http://localhost:8080/test") == "localhost"
+        assert (
+            PolitenessManager._domain_from_url("http://localhost:8080/test")
+            == "localhost"
+        )
 
     def test_subdomain(self):
-        assert PolitenessManager._domain_from_url("https://sub.example.com/path?a=1") == "sub.example.com"
+        assert (
+            PolitenessManager._domain_from_url("https://sub.example.com/path?a=1")
+            == "sub.example.com"
+        )
 
     def test_invalid_url(self):
         assert PolitenessManager._domain_from_url("not-a-url") == ""

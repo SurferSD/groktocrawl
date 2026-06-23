@@ -10,8 +10,7 @@ import asyncio
 import difflib
 import json
 import logging
-import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 import httpx
@@ -25,7 +24,7 @@ HISTORY_KEY = "monitor:{}:history"  # list of check results
 
 
 def _now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 def _get_redis() -> Redis:
@@ -42,7 +41,7 @@ def get_all_monitors() -> dict[str, dict]:
             monitors[mid] = json.loads(val)
         except json.JSONDecodeError:
             continue
-    return monitors
+    return monitors  # type: ignore[return-value]
 
 
 def save_monitor(monitor_id: str, config: dict) -> None:
@@ -58,20 +57,24 @@ def delete_monitor(monitor_id: str) -> None:
     r.delete(HISTORY_KEY.format(monitor_id))
 
 
-def get_monitor(monitor_id: str) -> dict | None:
+def get_monitor(monitor_id: str) -> dict[str, Any] | None:
     """Get a single monitor config."""
     r = _get_redis()
     raw = r.hget(MONITOR_KEY, monitor_id)
     if raw is None:
         return None
-    return json.loads(raw)
+    return json.loads(raw)  # type: ignore[no-any-return]
 
 
 def _compute_diff(old: str, new: str) -> str:
     """Compute a unified diff between old and new content."""
     old_lines = old.splitlines(keepends=True)
     new_lines = new.splitlines(keepends=True)
-    diff = list(difflib.unified_diff(old_lines, new_lines, fromfile="previous", tofile="current", n=3))
+    diff = list(
+        difflib.unified_diff(
+            old_lines, new_lines, fromfile="previous", tofile="current", n=3
+        )
+    )
     return "".join(diff[:100])  # cap at 100 lines
 
 
@@ -128,20 +131,23 @@ async def check_monitor(monitor_id: str, config: dict) -> dict:
     # Update stored content
     config["last_content"] = current_content
     config["last_checked"] = _now_iso()
-    config["last_result"] = result.get("changed", False) and "changed" or "unchanged"
+    config["last_result"] = (result.get("changed", False) and "changed") or "unchanged"
     save_monitor(monitor_id, config)
 
     # Notify via webhook
     if webhook_url and result.get("changed"):
         try:
             async with httpx.AsyncClient(timeout=10) as client:
-                await client.post(webhook_url, json={
-                    "event": "monitor.changed",
-                    "monitor_id": monitor_id,
-                    "url": url,
-                    "diff": result["diff"],
-                    "checked_at": result["checked_at"],
-                })
+                await client.post(
+                    webhook_url,
+                    json={
+                        "event": "monitor.changed",
+                        "monitor_id": monitor_id,
+                        "url": url,
+                        "diff": result["diff"],
+                        "checked_at": result["checked_at"],
+                    },
+                )
         except Exception as e:
             logger.warning("Webhook delivery failed for monitor %s: %s", monitor_id, e)
 
@@ -167,15 +173,21 @@ async def check_all_async() -> list[dict]:
 
 def check_all() -> None:
     """Synchronous entrypoint for Ofelia scheduler."""
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
+    logging.basicConfig(
+        level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s"
+    )
     results = asyncio.run(check_all_async())
     changed = [r for r in results if r.get("changed")]
     if changed:
-        print(f"Monitors checked: {len(results)}, changed: {len(changed)}")
+        logger.info(
+            "Monitors checked: %d, changed: %d",
+            len(results),
+            len(changed),
+        )
         for r in changed:
-            print(f"  CHANGED: {r['url']} ({r['monitor_id']})")
+            logger.info("  CHANGED: %s (%s)", r["url"], r["monitor_id"])
     else:
-        print(f"Monitors checked: {len(results)}, all unchanged")
+        logger.info("Monitors checked: %d, all unchanged", len(results))
 
 
 if __name__ == "__main__":

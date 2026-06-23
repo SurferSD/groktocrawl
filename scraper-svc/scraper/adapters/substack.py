@@ -183,8 +183,8 @@ def _rss_content_to_markdown(html_content: str) -> str:
     the scraper-svc).  Falls back to BeautifulSoup text extraction.
     """
     try:
-        from readability import Document
         from markdownify import markdownify as md
+        from readability import Document
 
         doc = Document(html_content)
         summary = doc.summary()
@@ -273,7 +273,9 @@ async def _fetch_via_browser(url: str, ctx: AdapterContext) -> str | None:
                 },
             )
             if text_resp.json().get("success"):
-                return text_resp.json().get("result", {}).get("script_result", "") or None
+                return (
+                    text_resp.json().get("result", {}).get("script_result", "") or None
+                )
 
     except Exception as exc:
         logger.debug("Browser fallback failed for %s: %s", url, exc)
@@ -282,8 +284,8 @@ async def _fetch_via_browser(url: str, ctx: AdapterContext) -> str | None:
             try:
                 async with httpx.AsyncClient(timeout=5) as c:
                     await c.delete(f"{browser_svc_url}/browsers/{session_id}")
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("Session cleanup failed for %s: %s", url, e)
     return None
 
 
@@ -319,9 +321,7 @@ class SubstackAdapter(SiteAdapter):
         origin = f"{parsed.scheme}://{parsed.hostname}"
 
         # ── Tier 1: RSS feed lookup ──────────────────────────────
-        feed_xml = await ctx.with_timeout(
-            _fetch_feed(origin), timeout=10
-        )
+        feed_xml = await ctx.with_timeout(_fetch_feed(origin), timeout=10)
         if feed_xml:
             items = _parse_rss_items(feed_xml)
             if items:
@@ -361,9 +361,7 @@ class SubstackAdapter(SiteAdapter):
 
         # ── Tier 2: Readability extraction ───────────────────────
         logger.info("Substack adapter: trying readability for %s", url)
-        readability_md = await ctx.with_timeout(
-            _fetch_via_readability(url), timeout=12
-        )
+        readability_md = await ctx.with_timeout(_fetch_via_readability(url), timeout=12)
         if readability_md:
             return AdapterResult(
                 success=True,
@@ -377,9 +375,7 @@ class SubstackAdapter(SiteAdapter):
 
         # ── Tier 3: Browser render ───────────────────────────────
         logger.info("Substack adapter: trying browser for %s", url)
-        browser_text = await ctx.with_timeout(
-            _fetch_via_browser(url, ctx), timeout=35
-        )
+        browser_text = await ctx.with_timeout(_fetch_via_browser(url, ctx), timeout=35)
         if browser_text:
             return AdapterResult(
                 success=True,
@@ -391,6 +387,4 @@ class SubstackAdapter(SiteAdapter):
                 url=url,
             )
 
-        raise AdapterError(
-            f"Could not extract content from Substack URL {url}"
-        )
+        raise AdapterError(f"Could not extract content from Substack URL {url}")

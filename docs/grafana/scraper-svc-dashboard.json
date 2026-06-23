@@ -1,0 +1,112 @@
+{
+  "title": "GroktoCrawl — scraper-svc Metrics",
+  "uid": "groktocrawl_scraper_svc",
+  "schemaVersion": 39,
+  "version": 1,
+  "tags": ["groktocrawl", "scraper-svc"],
+  "timezone": "browser",
+  "editable": true,
+  "panels": [
+    {
+      "title": "Scrape Call Rate",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "rps",
+          "custom": {
+            "showPoints": "never"
+          }
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum(rate(scrape_calls_total{instance=~\"scraper-svc:8001.*\"}[$__rate_interval])) by (status)",
+          "legendFormat": "{{status}}"
+        }
+      ],
+      "gridPos": {"h": 8, "w": 6, "x": 0, "y": 0}
+    },
+    {
+      "title": "Meta Call Rate",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "rps",
+          "custom": {
+            "showPoints": "never"
+          }
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum(rate(meta_calls_total{instance=~\"scraper-svc:8001.*\"}[$__rate_interval])) by (status)",
+          "legendFormat": "{{status}}"
+        }
+      ],
+      "gridPos": {"h": 8, "w": 6, "x": 6, "y": 0}
+    },
+    {
+      "title": "Call Distribution by Status",
+      "type": "barchart",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "rps"
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum(rate(scrape_calls_total{instance=~\"scraper-svc:8001.*\"}[$__rate_interval])) by (status)",
+          "legendFormat": "scrape {{status}}"
+        },
+        {
+          "expr": "sum(rate(meta_calls_total{instance=~\"scraper-svc:8001.*\"}[$__rate_interval])) by (status)",
+          "legendFormat": "meta {{status}}"
+        }
+      ],
+      "gridPos": {"h": 8, "w": 6, "x": 0, "y": 8}
+    },
+    {
+      "title": "Request Latency (p50/p95/p99)",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": {
+            "showPoints": "never"
+          }
+        }
+      },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.50, sum(rate(http_request_duration_seconds_bucket{instance=~\"scraper-svc:8001.*\"}[$__rate_interval])) by (le))",
+          "legendFormat": "p50"
+        },
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket{instance=~\"scraper-svc:8001.*\"}[$__rate_interval])) by (le))",
+          "legendFormat": "p95"
+        },
+        {
+          "expr": "histogram_quantile(0.99, sum(rate(http_request_duration_seconds_bucket{instance=~\"scraper-svc:8001.*\"}[$__rate_interval])) by (le))",
+          "legendFormat": "p99"
+        }
+      ],
+      "gridPos": {"h": 8, "w": 6, "x": 6, "y": 8}
+    }
+  ]
+}

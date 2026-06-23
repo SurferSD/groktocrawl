@@ -1,8 +1,20 @@
 [project]
 name = "groktocrawl"
-version = "0.7.0"
+version = "0.8.0"
 description = "Self-hosted, Firecrawl-compatible web scraping and AI research API"
 requires-python = ">=3.12"
+dependencies = [
+    "beautifulsoup4>=4.15.0",
+    "fastapi>=0.137.2",
+    "httpx>=0.28.1",
+    "prometheus-client>=0.25.0",
+    "redis>=8.0.0",
+    "requests>=2.34.2",
+    "uvicorn>=0.49.0",
+]
+
+[tool.setuptools.packages.find]
+include = ["groktocrawl*", "common*"]
 
 [project.optional-dependencies]
 dev = [
@@ -10,6 +22,8 @@ dev = [
     "pytest-cov>=5.0",
     "pytest-xdist>=3.0",
     "httpx>=0.28.0",
+    "vulture>=2.14",
+    "deptry>=0.23",
 ]
 
 [tool.ruff]
@@ -42,6 +56,7 @@ select = [
     "T20",   # flake8-print — no print in production code
     "RUF",   # ruff-specific rules
     "FURB",  # refurb — general quality
+    "TD",    # flake8-todos — track TODO/FIXME/HACK/XXX markers
 ]
 
 ignore = [
@@ -55,12 +70,17 @@ ignore = [
     "FURB101",# TypeVar name check — not always applicable
     "RUF006", # fire-and-forget create_task — intentional pattern
     "C901",   # complexity — tracked separately, not a blocker
+    "SIM102", # nested if — sometimes clearer separate
+    "RUF012", # mutable class attribute — intentional in adapter registry
+    "RUF002", # ambiguous char in docstring — intentional en-dash usage
+    "B904",   # raise from — sometimes raises a different exception type intentionally
 ]
 
 [tool.ruff.lint.per-file-ignores]
 "__init__.py" = ["F401"]
 "**/tests/**" = ["T20"]
 "tests/*" = ["T20"]
+"scraper-svc/scraper/adapters/github_social.py" = ["E741"]
 
 [tool.black]
 target-version = ["py312"]
@@ -69,4 +89,56 @@ skip-magic-trailing-comma = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+asyncio_mode = "auto"
 addopts = "--cov=agent-svc/agent --cov=scraper-svc/scraper --cov=browser-svc/browser_svc --cov=parse-svc/parse_svc --cov=portal-svc/portal --cov=semantic-svc --cov-report=term-missing --cov-fail-under=20 --durations=10 -n auto"
+
+[tool.mypy]
+ignore_missing_imports = true
+exclude = [
+    "/.venv/",
+    "/.venv-sys/",
+    "/htmlcov/",
+    "/graphify-out/",
+    "/droid-wiki/",
+    "/__pycache__/",
+    "/.egg-info/",
+    "/dist/",
+    "/build/",
+]
+
+[[tool.mypy.overrides]]
+module = [
+    "fastapi.*",
+    "uvicorn.*",
+    "playwright.*",
+    "redis.*",
+    "qdrant_client.*",
+    "sentence_transformers.*",
+    "readability_lxml.*",
+    "markdownify.*",
+    "beautifulsoup4.*",
+    "httpx.*",
+    "pydantic.*",
+    "numpy.*",
+    "jinja2.*",
+    "aiofiles.*",
+    "markitdown.*",
+    "pypdf.*",
+    "python_docx.*",
+    "python_pptx.*",
+    "openpyxl.*",
+    "tabulate.*",
+    "pillow.*",
+    "youtube_transcript_api.*",
+    "crawl4ai.*",
+    "python_multipart.*",
+]
+ignore_missing_imports = true
+
+[dependency-groups]
+dev = [
+    "pytest-asyncio>=1.4.0",
+    "pytest-cov>=7.1.0",
+    "pytest-xdist>=3.8.0",
+    "vulture>=2.16",
+]
