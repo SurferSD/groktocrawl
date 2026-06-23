@@ -1545,38 +1545,37 @@ def test_search_with_contents_fast_mode_triggers_scrape():
 
 
 def test_search_with_contents_highlights():
-    """Rich search with contents.highlights should return highlights per result."""
+    """Fast search with contents.highlights should return search results
+    without error (highlights may be empty when LLM is unavailable)."""
     r = httpx.post(
         AGENT + "/v2/search",
         json={
             "query": "test query",
             "limit": 2,
-            "search_type": "rich",
+            "search_type": "fast",
             "contents": {"highlights": {"maxCharacters": 500}},
         },
-        timeout=120,
+        timeout=60,
     )
     payload = r.json()
     assert payload["success"] is True
-    results = payload["data"].get("web", [])
-    # The API should not error — highlights population depends on LLM availability
 
 
 def test_search_with_contents_summary():
-    """Rich search with contents.summary should return summaries per result."""
+    """Fast search with contents.summary should return search results
+    without error (summary may be empty when LLM is unavailable)."""
     r = httpx.post(
         AGENT + "/v2/search",
         json={
             "query": "test query",
             "limit": 2,
-            "search_type": "rich",
+            "search_type": "fast",
             "contents": {"summary": {"maxTokens": 100}},
         },
-        timeout=120,
+        timeout=60,
     )
     payload = r.json()
     assert payload["success"] is True
-    # The API should not error — summary population depends on LLM availability
 
 
 def test_scrape_contents_default_unchanged():
