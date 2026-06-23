@@ -919,7 +919,6 @@ class ActivityResponse(BaseModel):
     data: list[ActivityItem] = Field(default_factory=list)
 
 
-<<<<<<< HEAD
 class EnrichmentField(BaseModel):
     """A field to extract for each enrichment item."""
 
@@ -950,7 +949,6 @@ class EnrichResponse(BaseModel):
     latency_ms: float = 0
     items_enriched: int = 0
     fields_per_item: int = 0
-=======
 class CrawlActiveItem(BaseModel):
     """A single active crawl job entry for ``GET /v2/crawl/active``.
 
@@ -1029,4 +1027,3 @@ class CrawlErrorsResponse(BaseModel):
     errors: list[CrawlErrorItem] = Field(default_factory=list)
     robots_blocked: list[CrawlErrorItem] = Field(default_factory=list)
     error: str | None = None
->>>>>>> origin/main

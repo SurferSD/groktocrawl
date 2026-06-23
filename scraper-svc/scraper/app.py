@@ -289,8 +289,6 @@ async def scrape(request: ScrapeRequest):
                     # Fallback: compact verbosity from markdown (no HTML needed)
                     markdown = markdown[:300]
                 elif verbosity == "full" and raw_html:
-                    from .fetch import html_to_markdown
-
                     # Full verbosity: bypass readability, render entire page
                     from markdownify import markdownify as md
 
@@ -304,7 +302,9 @@ async def scrape(request: ScrapeRequest):
                     if soup:
                         markdown = md(str(soup), heading_style="ATX", strip=[])
                     else:
-                        markdown = html_to_markdown(raw_html)
+                        # Fallback: strip HTML tags with regex
+                        import re
+                        markdown = re.sub(r"<[^>]+>", "", raw_html).strip()
                 elif include_sections or exclude_sections:
                     if raw_html:
                         markdown = filter_sections(
