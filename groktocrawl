@@ -536,21 +536,27 @@ class Client:
     def crawl(
         self,
         url: str,
-        limit: int = 50,
+        limit: int = 0,
         max_depth: int = 2,
         include_paths: list[str] | None = None,
         exclude_paths: list[str] | None = None,
+        max_pages: int | None = None,
+        ignore_query_parameters: bool = False,
         **extra: Any,
     ) -> dict[str, Any]:
         data: dict[str, Any] = {
             "url": url,
             "limit": limit,
-            "maxDepth": max_depth,
+            "max_depth": max_depth,
         }
+        if max_pages is not None:
+            data["max_pages"] = max_pages
         if include_paths:
-            data["includePaths"] = include_paths
+            data["include_paths"] = include_paths
         if exclude_paths:
-            data["excludePaths"] = exclude_paths
+            data["exclude_paths"] = exclude_paths
+        if ignore_query_parameters:
+            data["ignore_query_parameters"] = True
         data.update(extra)
         return self._request("POST", "/crawl", json_data=data)
 
@@ -865,6 +871,8 @@ def cmd_crawl(client: Client, args: argparse.Namespace) -> None:
             max_depth=args.max_depth,
             include_paths=args.include_paths,
             exclude_paths=args.exclude_paths,
+            max_pages=args.max_pages,
+            ignore_query_parameters=args.ignore_query_parameters,
         )
     except ApiError as e:
         die(str(e))
@@ -883,14 +891,20 @@ def cmd_crawl(client: Client, args: argparse.Namespace) -> None:
         return
 
     log(f"Crawl job {job_id} — polling...")
+    poll_errors = 0
+    max_poll_errors = 3
     while True:
         time.sleep(POLL_INTERVAL)
         try:
             status = client.crawl_status(job_id)
         except ApiError as e:
-            warn(f"Status check failed: {e}")
+            poll_errors += 1
+            if poll_errors >= max_poll_errors:
+                die(f"Lost connection to server while polling crawl status: {e}")
+            warn(f"Status check failed ({poll_errors}/{max_poll_errors}): {e}")
             continue
 
+        poll_errors = 0  # reset on success
         s = status.get("status", "unknown")
         if s in ("completed", "finished"):
             pages = status.get("data", status.get("pages", []))
@@ -934,13 +948,15 @@ def cmd_agent(client: Client, args: argparse.Namespace) -> None:
             # Streaming path (default)
             result = client.create_agent_stream(prompt=args.prompt, urls=args.urls)
     except ApiError as e:
-        die(str(e))
+        print(f"\nError: {e}", flush=True)
+        sys.exit(1)
 
     if args.sync:
         # Poll loop (non-streaming)
         job_id = result.get("id", "")
         if not job_id:
-            die("No job ID returned")
+            print("\nError: No job ID returned from agent endpoint", flush=True)
+            sys.exit(1)
 
         if args.no_poll:
             if JSON_OUTPUT:
@@ -984,7 +1000,9 @@ def cmd_agent(client: Client, args: argparse.Namespace) -> None:
                             print(f"  {src}")
                 return
             elif s == "failed":
-                die(f"Agent failed: {status.get('error', 'unknown')}")
+                err_msg = status.get("error", "unknown")
+                print(f"\nError: Agent failed — {err_msg}", flush=True)
+                sys.exit(1)
             else:
                 info(f"  Status: {s}")
     else:
@@ -1026,7 +1044,8 @@ def cmd_agent(client: Client, args: argparse.Namespace) -> None:
                     if not pyramid_mode:
                         print()
                 elif event["type"] == "error":
-                    die("Error: " + event["content"])
+                    print(f"\nError: {event['content']}", flush=True)
+                    sys.exit(1)
             except json.JSONDecodeError:
                 continue
 
@@ -1837,7 +1856,17 @@ def make_parser() -> argparse.ArgumentParser:
     p_crawl = subparsers.add_parser("crawl", help="Crawl a website")
     p_crawl.add_argument("url", help="Site URL to crawl")
     p_crawl.add_argument(
-        "--limit", "-l", type=int, default=50, help="Max pages to crawl (default: 50)"
+        "--limit",
+        "-l",
+        type=int,
+        default=0,
+        help="Max pages to crawl (default: unlimited)",
+    )
+    p_crawl.add_argument(
+        "--max-pages",
+        type=int,
+        default=None,
+        help="Maximum pages to crawl (overrides --limit if both provided; the API uses the stricter value)",
     )
     p_crawl.add_argument(
         "--max-depth", "-d", type=int, default=2, help="Max crawl depth (default: 2)"
@@ -1847,6 +1876,12 @@ def make_parser() -> argparse.ArgumentParser:
     )
     p_crawl.add_argument(
         "--exclude-paths", nargs="+", help="URL path patterns to exclude"
+    )
+    p_crawl.add_argument(
+        "--ignore-query-params",
+        dest="ignore_query_parameters",
+        action="store_true",
+        help="Treat URLs with different query parameters as the same page",
     )
     p_crawl.add_argument(
         "--no-poll", action="store_true", help="Don't poll for completion"

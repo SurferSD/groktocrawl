@@ -40,7 +40,6 @@ import logging
 import os
 import re
 import time
-from urllib.parse import urlparse
 
 import httpx
 
@@ -55,47 +54,132 @@ logger = logging.getLogger(__name__)
 # known-textual extensions instead.
 TEXT_EXTENSIONS: set[str] = {
     # Source code
-    ".py", ".js", ".ts", ".jsx", ".tsx", ".mjs", ".cjs",
-    ".rs", ".go", ".c", ".h", ".cpp", ".hpp", ".cc", ".hh",
-    ".java", ".rb", ".php", ".swift", ".kt", ".scala", ".clj",
-    ".lua", ".r", ".m", ".mm", ".dart", ".elm", ".ex", ".exs",
-    ".zig", ".nim", ".cbl", ".cpy", ".sas",
+    ".py",
+    ".js",
+    ".ts",
+    ".jsx",
+    ".tsx",
+    ".mjs",
+    ".cjs",
+    ".rs",
+    ".go",
+    ".c",
+    ".h",
+    ".cpp",
+    ".hpp",
+    ".cc",
+    ".hh",
+    ".java",
+    ".rb",
+    ".php",
+    ".swift",
+    ".kt",
+    ".scala",
+    ".clj",
+    ".lua",
+    ".r",
+    ".m",
+    ".mm",
+    ".dart",
+    ".elm",
+    ".ex",
+    ".exs",
+    ".zig",
+    ".nim",
+    ".cbl",
+    ".cpy",
+    ".sas",
     # Web
-    ".html", ".htm", ".css", ".scss", ".sass", ".less",
-    ".xml", ".svg",
+    ".html",
+    ".htm",
+    ".css",
+    ".scss",
+    ".sass",
+    ".less",
+    ".xml",
+    ".svg",
     # Config / data
-    ".json", ".yaml", ".yml", ".toml", ".ini", ".cfg", ".conf",
-    ".env", ".envrc", ".lock", ".gitignore", ".editorconfig",
-    ".dockerfile", ".tf", ".tfvars", ".hcl",
+    ".json",
+    ".yaml",
+    ".yml",
+    ".toml",
+    ".ini",
+    ".cfg",
+    ".conf",
+    ".env",
+    ".envrc",
+    ".lock",
+    ".gitignore",
+    ".editorconfig",
+    ".dockerfile",
+    ".tf",
+    ".tfvars",
+    ".hcl",
     # Docs
-    ".md", ".mdx", ".rst", ".txt", ".org", ".adoc",
+    ".md",
+    ".mdx",
+    ".rst",
+    ".txt",
+    ".org",
+    ".adoc",
     # Shell / scripts
-    ".sh", ".bash", ".zsh", ".fish", ".ps1", ".bat", ".cmd",
-    ".sql", ".graphql", ".gql",
+    ".sh",
+    ".bash",
+    ".zsh",
+    ".fish",
+    ".ps1",
+    ".bat",
+    ".cmd",
+    ".sql",
+    ".graphql",
+    ".gql",
     # Python-specific
-    ".cfg", ".ini", ".pot", ".po", ".mo",
+    ".pot",
+    ".po",
+    ".mo",
     ".whl",  # metadata only
     # Misc text
-    ".csv", ".tsv", ".log",
-    ".diff", ".patch",
+    ".csv",
+    ".tsv",
+    ".log",
+    ".diff",
+    ".patch",
     ".nix",
 }
 
 # Extensionless filenames that are always text
 TEXT_FILENAMES: set[str] = {
-    "Dockerfile", "dockerfile",
-    "Makefile", "makefile", "GNUmakefile",
-    ".env", ".envrc",
-    "README", "LICENSE", "CHANGELOG", "CONTRIBUTING",
+    "Dockerfile",
+    "dockerfile",
+    "Makefile",
+    "makefile",
+    "GNUmakefile",
+    ".env",
+    ".envrc",
+    "README",
+    "LICENSE",
+    "CHANGELOG",
+    "CONTRIBUTING",
     "Vagrantfile",
     "Procfile",
-    ".gitignore", ".gitattributes", ".editorconfig",
-    ".prettierrc", ".eslintrc", ".babelrc",
-    "Cargo.toml", "Cargo.lock",
-    "requirements.txt", "Pipfile", "Pipfile.lock",
-    "pyproject.toml", "setup.py", "setup.cfg",
-    "go.mod", "go.sum",
-    "Gemfile", "Gemfile.lock",
+    ".gitignore",
+    ".gitattributes",
+    ".editorconfig",
+    ".prettierrc",
+    ".eslintrc",
+    ".babelrc",
+    "Cargo.toml",
+    "Cargo.lock",
+    "requirements.txt",
+    "Pipfile",
+    "Pipfile.lock",
+    "pyproject.toml",
+    "setup.py",
+    "setup.cfg",
+    "go.mod",
+    "go.sum",
+    "Gemfile",
+    "Gemfile.lock",
 }
 
 # ── API endpoint constants ───────────────────────────────────────
@@ -143,6 +227,7 @@ _PULL_URL_PATTERN = re.compile(
 
 # ── Rate limit tracking ──────────────────────────────────────────
 
+
 class _RateLimitTracker:
     """Per-endpoint sliding window for burst protection.
 
@@ -155,10 +240,10 @@ class _RateLimitTracker:
         self._endpoints: dict[str, list[float]] = {}
         # Default burst limits per endpoint type
         self._burst_limits: dict[str, int] = {
-            "raw": 10,       # raw.githubusercontent.com — generous
-            "contents": 5,   # /repos/*/contents endpoint
-            "repo": 5,       # /repos/* endpoint
-            "readme": 5,     # /repos/*/readme endpoint
+            "raw": 10,  # raw.githubusercontent.com — generous
+            "contents": 5,  # /repos/*/contents endpoint
+            "repo": 5,  # /repos/* endpoint
+            "readme": 5,  # /repos/*/readme endpoint
         }
 
     def can_call(self, endpoint: str) -> bool:
@@ -190,8 +275,9 @@ class _RateLimitTracker:
         """Return remaining burst budget per endpoint."""
         result = {}
         for ep, limit in self._burst_limits.items():
-            used = len([t for t in self._endpoints.get(ep, [])
-                        if time.time() - t < 60.0])
+            used = len(
+                [t for t in self._endpoints.get(ep, []) if time.time() - t < 60.0]
+            )
             result[ep] = limit - used
         return result
 
@@ -200,6 +286,7 @@ _rate_tracker = _RateLimitTracker()
 
 
 # ── API helper ────────────────────────────────────────────────────
+
 
 def _get_token() -> str:
     """Return the GitHub API token from GITHUB_TOKEN env var, or empty string."""
@@ -225,6 +312,7 @@ def _api_headers() -> dict[str, str]:
 
 
 # ── URL type classification ──────────────────────────────────────
+
 
 class UrlType:
     """Enum-like constants for URL type classification."""
@@ -288,20 +376,20 @@ def _build_raw_url(owner: str, repo: str, ref: str, path: str) -> str:
 
 # ── Content extraction functions ──────────────────────────────────
 
-async def _fetch_raw_content(
-    url: str, ctx: AdapterContext
-) -> dict | None:
+
+async def _fetch_raw_content(url: str, ctx: AdapterContext) -> dict | None:
     """Tier 1: fetch raw content via raw.githubusercontent.com.
 
     Returns {markdown, source, metadata} or None on failure.
     """
     try:
-        async with httpx.AsyncClient(
-            follow_redirects=True, timeout=30
-        ) as client:
-            resp = await client.get(url, headers={
-                "User-Agent": "GroktoCrawl/0.6.0",
-            })
+        async with httpx.AsyncClient(follow_redirects=True, timeout=30) as client:
+            resp = await client.get(
+                url,
+                headers={
+                    "User-Agent": "GroktoCrawl/0.6.0",
+                },
+            )
             if resp.status_code != 200:
                 logger.debug("Raw fetch returned %d for %s", resp.status_code, url)
                 return None
@@ -341,13 +429,16 @@ async def _fetch_via_contents_api(
     headers = _api_headers()
 
     try:
-        async with httpx.AsyncClient(
-            follow_redirects=True, timeout=15
-        ) as client:
+        async with httpx.AsyncClient(follow_redirects=True, timeout=15) as client:
             resp = await client.get(url, params=params, headers=headers)
             if resp.status_code != 200:
-                logger.debug("Contents API returned %d for %s/%s/%s",
-                             resp.status_code, owner, repo, path)
+                logger.debug(
+                    "Contents API returned %d for %s/%s/%s",
+                    resp.status_code,
+                    owner,
+                    repo,
+                    path,
+                )
                 return None
 
             data = resp.json()
@@ -363,12 +454,14 @@ async def _fetch_via_contents_api(
                     item_type = item.get("type", "")
                     size = item.get("size", 0)
                     download_url = item.get("download_url", "") or ""
-                    entries.append({
-                        "name": name,
-                        "type": item_type,
-                        "size": size,
-                        "download_url": download_url,
-                    })
+                    entries.append(
+                        {
+                            "name": name,
+                            "type": item_type,
+                            "size": size,
+                            "download_url": download_url,
+                        }
+                    )
 
                 md_lines = [f"# {path}", "", f"*{len(entries)} items*", ""]
                 # Sort: directories first, then files, alphabetical
@@ -400,7 +493,9 @@ async def _fetch_via_contents_api(
 
                 if encoding == "base64" and content_b64:
                     try:
-                        decoded = base64.b64decode(content_b64).decode("utf-8", errors="replace")
+                        decoded = base64.b64decode(content_b64).decode(
+                            "utf-8", errors="replace"
+                        )
                     except Exception:
                         decoded = content_b64
                 else:
@@ -430,16 +525,15 @@ async def _fetch_readme(owner: str, repo: str) -> dict | None:
     headers = _api_headers()
 
     try:
-        async with httpx.AsyncClient(
-            follow_redirects=True, timeout=15
-        ) as client:
+        async with httpx.AsyncClient(follow_redirects=True, timeout=15) as client:
             resp = await client.get(url, headers=headers)
             if resp.status_code == 404:
                 logger.debug("No README for %s/%s", owner, repo)
                 return None
             if resp.status_code != 200:
-                logger.debug("Readme API returned %d for %s/%s",
-                             resp.status_code, owner, repo)
+                logger.debug(
+                    "Readme API returned %d for %s/%s", resp.status_code, owner, repo
+                )
                 return None
 
             data = resp.json()
@@ -449,9 +543,12 @@ async def _fetch_readme(owner: str, repo: str) -> dict | None:
             size = data.get("size", 0)
 
             import base64
+
             if encoding == "base64" and content_b64:
                 try:
-                    decoded = base64.b64decode(content_b64).decode("utf-8", errors="replace")
+                    decoded = base64.b64decode(content_b64).decode(
+                        "utf-8", errors="replace"
+                    )
                 except Exception:
                     decoded = content_b64
             else:
@@ -479,9 +576,7 @@ async def _fetch_repo_metadata(owner: str, repo: str) -> dict | None:
     headers = _api_headers()
 
     try:
-        async with httpx.AsyncClient(
-            follow_redirects=True, timeout=15
-        ) as client:
+        async with httpx.AsyncClient(follow_redirects=True, timeout=15) as client:
             resp = await client.get(url, headers=headers)
             if resp.status_code != 200:
                 return None
@@ -493,7 +588,9 @@ async def _fetch_repo_metadata(owner: str, repo: str) -> dict | None:
                 "forks": data.get("forks_count", 0),
                 "language": data.get("language", ""),
                 "topics": data.get("topics", []),
-                "license": data.get("license", {}).get("spdx_id", "") if data.get("license") else "",
+                "license": data.get("license", {}).get("spdx_id", "")
+                if data.get("license")
+                else "",
                 "default_branch": data.get("default_branch", ""),
             }
     except Exception as exc:
@@ -503,8 +600,10 @@ async def _fetch_repo_metadata(owner: str, repo: str) -> dict | None:
 
 # ── Frontmatter builder ──────────────────────────────────────────
 
-def _build_frontmatter(url_type: str, parts: dict | None,
-                       extra: dict | None = None) -> dict:
+
+def _build_frontmatter(
+    url_type: str, parts: dict | None, extra: dict | None = None
+) -> dict:
     """Build compact frontmatter (<20 lines) for any result type."""
     meta: dict = {
         "source": "github-adapter",
@@ -521,15 +620,24 @@ def _build_frontmatter(url_type: str, parts: dict | None,
 
     if extra:
         # Keep it compact — only add meaningful metadata
-        for key in ("size", "language", "item_count", "stars",
-                    "forks", "description", "source", "encoding"):
-            if key in extra and extra[key]:
+        for key in (
+            "size",
+            "language",
+            "item_count",
+            "stars",
+            "forks",
+            "description",
+            "source",
+            "encoding",
+        ):
+            if extra.get(key):
                 meta[key] = extra[key]
 
     return meta
 
 
 # ── Adapter class ────────────────────────────────────────────────
+
 
 @adapter
 class GitHubAdapter(SiteAdapter):
@@ -573,8 +681,12 @@ class GitHubAdapter(SiteAdapter):
         elif url_type in (UrlType.ISSUE, UrlType.PULL):
             # Not handled in MVP — raise AdapterError so dispatch()
             # falls through to the generic tier pipeline
-            logger.info("GitHub adapter: %s not handled in MVP, falling through", url_type)
-            raise AdapterError(f"{url_type} extraction not yet implemented — falling through to generic tier")
+            logger.info(
+                "GitHub adapter: %s not handled in MVP, falling through", url_type
+            )
+            raise AdapterError(
+                f"{url_type} extraction not yet implemented — falling through to generic tier"
+            )
         else:
             raise AdapterError(f"Unknown GitHub URL type: {url}")
 
@@ -588,11 +700,18 @@ class GitHubAdapter(SiteAdapter):
         path = parts.get("path", "")
         # Binary check on the path before fetching
         if _is_binary(path):
-            logger.info("GitHub adapter: binary file detected via extension, skipping content: %s", path)
-            metadata = _build_frontmatter(UrlType.RAW, parts, {
-                "size": "binary",
-                "note": "Binary file — content not extracted",
-            })
+            logger.info(
+                "GitHub adapter: binary file detected via extension, skipping content: %s",
+                path,
+            )
+            metadata = _build_frontmatter(
+                UrlType.RAW,
+                parts,
+                {
+                    "size": "binary",
+                    "note": "Binary file — content not extracted",
+                },
+            )
             return AdapterResult(
                 success=True,
                 markdown=f"*Binary file: `{path}`*",
@@ -625,7 +744,9 @@ class GitHubAdapter(SiteAdapter):
             parts["owner"], parts["repo"], path, parts.get("ref")
         )
         if api_result:
-            metadata = _build_frontmatter(UrlType.RAW, parts, api_result.get("metadata"))
+            metadata = _build_frontmatter(
+                UrlType.RAW, parts, api_result.get("metadata")
+            )
             return AdapterResult(
                 success=True,
                 markdown=api_result["markdown"],
@@ -651,10 +772,14 @@ class GitHubAdapter(SiteAdapter):
         # Binary check
         if _is_binary(path):
             logger.info("GitHub adapter: binary file detected via extension: %s", path)
-            metadata = _build_frontmatter(UrlType.BLOB, parts, {
-                "size": "binary",
-                "note": "Binary file — content not extracted",
-            })
+            metadata = _build_frontmatter(
+                UrlType.BLOB,
+                parts,
+                {
+                    "size": "binary",
+                    "note": "Binary file — content not extracted",
+                },
+            )
             return AdapterResult(
                 success=True,
                 markdown=f"*Binary file: `{path}`*",
@@ -669,7 +794,9 @@ class GitHubAdapter(SiteAdapter):
             _rate_tracker.record_call("raw")
             raw_result = await _fetch_raw_content(raw_url, ctx)
             if raw_result:
-                metadata = _build_frontmatter(UrlType.BLOB, parts, raw_result.get("metadata"))
+                metadata = _build_frontmatter(
+                    UrlType.BLOB, parts, raw_result.get("metadata")
+                )
                 return AdapterResult(
                     success=True,
                     markdown=raw_result["markdown"],
@@ -678,12 +805,16 @@ class GitHubAdapter(SiteAdapter):
                     url=url,
                 )
         else:
-            logger.debug("GitHub adapter: raw endpoint rate limited, skipping raw fetch")
+            logger.debug(
+                "GitHub adapter: raw endpoint rate limited, skipping raw fetch"
+            )
 
         # Tier 2: Contents API
         api_result = await _fetch_via_contents_api(owner, repo, path, ref)
         if api_result:
-            metadata = _build_frontmatter(UrlType.BLOB, parts, api_result.get("metadata"))
+            metadata = _build_frontmatter(
+                UrlType.BLOB, parts, api_result.get("metadata")
+            )
             return AdapterResult(
                 success=True,
                 markdown=api_result["markdown"],
@@ -713,7 +844,9 @@ class GitHubAdapter(SiteAdapter):
         _rate_tracker.record_call("contents")
         api_result = await _fetch_via_contents_api(owner, repo, path, ref)
         if api_result:
-            metadata = _build_frontmatter(UrlType.TREE, parts, api_result.get("metadata"))
+            metadata = _build_frontmatter(
+                UrlType.TREE, parts, api_result.get("metadata")
+            )
             return AdapterResult(
                 success=True,
                 markdown=api_result["markdown"],

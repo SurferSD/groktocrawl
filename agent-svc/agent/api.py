@@ -8,11 +8,7 @@ from datetime import UTC
 from typing import Any
 
 import httpx
-from bs4 import BeautifulSoup
 from fastapi import APIRouter, Request, Response
-from rq import Queue
-
-from common.url import extract_domain, is_same_origin
 
 from .exceptions import (
     BrowserError,
@@ -38,7 +34,11 @@ from .models import (
     BrowserExecuteResponse,
     BrowserListResponse,
     Citation,
+    CrawlActiveItem,
+    CrawlActiveResponse,
     CrawlCreateResponse,
+    CrawlErrorItem,
+    CrawlErrorsResponse,
     CrawlRequest,
     CrawlStatusResponse,
     EnrichRequest,
@@ -56,6 +56,8 @@ from .models import (
     MonitorListResponse,
     MonitorResponse,
     MonitorUpdateRequest,
+    ParamsPreviewRequest,
+    ParamsPreviewResponse,
     ParseResponse,
     ScrapeData,
     ScrapeRequest,
@@ -87,12 +89,8 @@ def _get_client_ip(request: Request) -> str:
     return "unknown"
 
 
-def _enqueue(queue: Queue, func: str, **kwargs: Any) -> None:
-    queue.enqueue(func, **kwargs)
-
-
 @router.get("/v2/activity", response_model=ActivityResponse)
-async def list_activity(request: Request):
+async def list_activity(request: Request) -> ActivityResponse:
     """List all active/processing jobs across all job types.
 
     Returns jobs with status ``processing``, ordered by creation time.
@@ -118,9 +116,7 @@ async def list_activity(request: Request):
 
 
 @router.post("/v2/scrape", response_model=ScrapeResponse)
-async def scrape(request: Request, body: ScrapeRequest):
-    import asyncio
-
+async def scrape(request: Request, body: ScrapeRequest) -> ScrapeResponse:
     scraper = request.app.state.scraper_client
     result = await scraper.scrape(body.url)
     if result.get("success"):
@@ -129,7 +125,9 @@ async def scrape(request: Request, body: ScrapeRequest):
         markdown = scraper_data.get("markdown", "")
         if markdown:
             title = scraper_data.get("metadata", {}).get("title", "")
-            asyncio.create_task(_index_scrape(body.url, title, markdown, request))
+            request.app.state.task_tracker.create_background_task(
+                _index_scrape(body.url, title, markdown, request)
+            )
         return ScrapeResponse(
             success=True,
             data=ScrapeData(
@@ -142,7 +140,7 @@ async def scrape(request: Request, body: ScrapeRequest):
 
 
 @router.post("/v2/agent", response_model=AgentCreateResponse)
-async def create_agent(request: Request, body: AgentRequest, response: Response):
+async def create_agent(request: Request, body: AgentRequest, response: Response) -> Any:
     # ── Per-client rate limit check ────────────────────────────
     client_ip = _get_client_ip(request)
     rate_limiter = request.app.state.rate_limiter
@@ -169,9 +167,33 @@ async def create_agent(request: Request, body: AgentRequest, response: Response)
 
     # Streaming path — run inline, return SSE
     if body.stream:
+        # Pre-flight LLM health check — fail fast before opening the stream
+        from .llm import LLMClient
+
+        health_logger = logging.getLogger(__name__)
+        effective_model = (
+            body.model
+            if body.model and body.model != "default"
+            else request.app.state.llm_model
+        )
+        llm_check = LLMClient(
+            base_url=request.app.state.llm_base_url,
+            api_key=request.app.state.llm_api_key,
+            model=effective_model,
+        )
+        if not await llm_check.check_health():
+            health_logger.error("LLM backend unreachable. Agent disabled.")
+            await llm_check.close()
+            from fastapi import HTTPException
+
+            raise HTTPException(
+                status_code=503,
+                detail="LLM backend is not available. Cannot process agent request.",
+            )
+        await llm_check.close()
         from fastapi.responses import StreamingResponse
 
-        async def event_stream():
+        async def event_stream() -> Any:
             from .research import run_research_stream
 
             async for event in run_research_stream(
@@ -200,6 +222,12 @@ async def create_agent(request: Request, body: AgentRequest, response: Response)
                     yield f"data: {json.dumps({'type': 'done', 'result': event['result'], 'sources': event['sources'], 'latency_ms': event['latency_ms']})}\n\n"
                 elif event["type"] == "error":
                     yield f"data: {json.dumps({'type': 'error', 'content': event['content']})}\n\n"
+                elif event["type"] == "status":
+                    yield f"data: {json.dumps({'type': 'status', 'state': event['state']})}\n\n"
+                elif event["type"] == "research_plan":
+                    yield f"data: {json.dumps({'type': 'research_plan', 'strategy': event['strategy'], 'queries': event['queries'], 'reasoning': event['reasoning']})}\n\n"
+                elif event["type"] == "research_pass":
+                    yield f"data: {json.dumps({'type': 'research_pass', 'pass': event['pass'], 'total_passes': event['total_passes']})}\n\n"
             yield "data: [DONE]\n\n"
 
         headers = {
@@ -218,11 +246,10 @@ async def create_agent(request: Request, body: AgentRequest, response: Response)
 
     # Process inline (synchronous) for MVP — no RQ worker needed.
     # A separate worker container can be added later for proper async.
-    import asyncio
 
     from .worker import _process_agent_async
 
-    asyncio.create_task(
+    request.app.state.task_tracker.create_background_task(
         _process_agent_async(
             job_id=job_id,
             prompt=body.prompt,
@@ -246,7 +273,7 @@ async def create_agent(request: Request, body: AgentRequest, response: Response)
 
 
 @router.get("/v2/agent/{job_id}", response_model=AgentStatusResponse)
-async def get_agent_status(request: Request, job_id: str):
+async def get_agent_status(request: Request, job_id: str) -> AgentStatusResponse:
     store: JobStore = request.app.state.job_store
     job = store.get_job(job_id)
     if job is None:
@@ -261,7 +288,7 @@ async def get_agent_status(request: Request, job_id: str):
 
 
 @router.delete("/v2/agent/{job_id}", response_model=AgentCancelResponse)
-async def cancel_agent(request: Request, job_id: str):
+async def cancel_agent(request: Request, job_id: str) -> AgentCancelResponse:
     store: JobStore = request.app.state.job_store
     if not store.cancel_job(job_id):
         raise NotFoundError(
@@ -271,44 +298,305 @@ async def cancel_agent(request: Request, job_id: str):
 
 
 @router.post("/v2/crawl", response_model=CrawlCreateResponse)
-async def create_crawl(request: Request, body: CrawlRequest):
+async def create_crawl(
+    request: Request, body: CrawlRequest, response: Response
+) -> CrawlCreateResponse:
+    # ── Per-client rate limit check (VAL-CONC-047) ────────────
+    client_ip = _get_client_ip(request)
+    rate_limiter = request.app.state.rate_limiter
+    allowed, rate_remaining = await rate_limiter.check(f"{client_ip}:crawl")
+    if not allowed:
+        from .exceptions import RateLimitedError
+        from .metrics import METRICS
+
+        METRICS.counter("search_calls_total", "Total search calls", ["status"]).inc(
+            {"status": "rate_limited"}
+        )
+        raise RateLimitedError(
+            detail=f"Per-client rate limit exceeded ({rate_limiter.limit}/{rate_limiter.window}s)"
+        )
+
+    response.headers["X-Crawl-Rate-Remaining"] = (
+        f"{rate_remaining}/{rate_limiter.limit}"
+    )
+
+    # ── NL→params: derive from prompt, merge with explicit params ──
+    include_paths = body.include_paths
+    exclude_paths = body.exclude_paths
+    max_depth = body.max_depth
+
+    if body.prompt:
+        from .nl_params import derive_crawl_params, merge_params
+
+        # Detect which fields were explicitly set by the user
+        # (exclude_unset=True only includes fields present in the request body)
+        explicitly_set = body.model_dump(exclude_unset=True)
+
+        # Explicit params that the user set (non-None values that were in the request)
+        explicit: dict[str, object] = {}
+        if "include_paths" in explicitly_set and body.include_paths is not None:
+            explicit["include_paths"] = body.include_paths
+        if "exclude_paths" in explicitly_set and body.exclude_paths is not None:
+            explicit["exclude_paths"] = body.exclude_paths
+        if "max_depth" in explicitly_set:
+            explicit["max_depth"] = body.max_depth
+
+        llm_result = await derive_crawl_params(
+            prompt=body.prompt,
+            llm_base_url=request.app.state.llm_base_url,
+            llm_api_key=request.app.state.llm_api_key,
+            llm_model=request.app.state.llm_model,
+        )
+
+        llm_error = llm_result.get("error")
+        if llm_error:
+            logger.warning("NL→params for crawl %s: %s", "pending", llm_error)
+
+        # Merge: explicit beats LLM
+        merged = merge_params(llm_result, explicit)  # type: ignore[arg-type]
+
+        # Apply merged values (only if not overridden by explicit user params)
+        if "include_paths" in merged and "include_paths" not in explicitly_set:
+            include_paths = merged["include_paths"]
+        if "exclude_paths" in merged and "exclude_paths" not in explicitly_set:
+            exclude_paths = merged["exclude_paths"]
+        if "max_depth" in merged and "max_depth" not in explicitly_set:
+            max_depth = merged["max_depth"]
+
     store: JobStore = request.app.state.job_store
     job_id = store.create_job(kind="crawl", payload=body.model_dump())
-    import asyncio
 
+    # Resolve limit vs max_pages conflict (stricter wins, per VAL-CRAWL-089)
+    effective_max_pages = body.max_pages
+    if body.limit is not None:
+        effective_max_pages = min(body.max_pages, body.limit)
+
+    # ── Streaming path: run inline, return SSE ────────────
+    if body.stream:
+        from fastapi.responses import StreamingResponse
+
+        from .crawl_stream import crawl_event_stream
+        from .settings import load_settings as _load_crawl_settings
+
+        _settings = _load_crawl_settings()
+
+        async def event_stream() -> Any:
+            async for event in crawl_event_stream(
+                job_id=job_id,
+                url=body.url,
+                max_pages=effective_max_pages,
+                max_depth=max_depth,
+                scraper_url=request.app.state.scraper_url,
+                store=store,
+                task_tracker=request.app.state.task_tracker,
+                webhook_config=body.webhook,
+                ignore_query_parameters=body.ignore_query_parameters,
+                include_paths=include_paths,
+                exclude_paths=exclude_paths,
+                regex_on_full_url=body.regex_on_full_url,
+                verbose=body.verbose,
+                sitemap_mode=body.sitemap,
+                crawl_entire_domain=body.crawl_entire_domain,
+                allow_subdomains=body.allow_subdomains,
+                allow_external_links=body.allow_external_links,
+                max_concurrency=body.max_concurrency,
+                delay=body.delay,
+                ignore_robots_txt=body.ignore_robots_txt,
+                robots_user_agent=body.robots_user_agent,
+                scrape_options=body.scrape_options.model_dump(
+                    mode="json", by_alias=True
+                )
+                if body.scrape_options
+                else None,
+                max_duration_seconds=_settings.crawl_max_duration_seconds,
+                idle_timeout_seconds=_settings.crawl_idle_timeout_seconds,
+            ):
+                yield event
+            yield "data: [DONE]\n\n"
+
+        sse_headers = {
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "Access-Control-Allow-Origin": "*",
+            "Location": f"/v2/crawl/{job_id}/stream",
+            "X-Accel-Buffering": "no",
+        }
+        return StreamingResponse(
+            event_stream(),
+            media_type="text/event-stream",
+            headers=sse_headers,
+        )
+
+    # ── Sync path (non-streaming): create background task ─────────
     from .worker import _process_crawl_async
 
-    asyncio.create_task(
+    request.app.state.task_tracker.create_background_task(
         _process_crawl_async(
             job_id=job_id,
             url=body.url,
-            max_pages=body.max_pages,
-            max_depth=body.max_depth,
+            max_pages=effective_max_pages,
+            max_depth=max_depth,
             scraper_url=request.app.state.scraper_url,
             webhook_config=body.webhook,
+            task_tracker=request.app.state.task_tracker,
+            ignore_query_parameters=body.ignore_query_parameters,
+            include_paths=include_paths,
+            exclude_paths=exclude_paths,
+            regex_on_full_url=body.regex_on_full_url,
+            verbose=body.verbose,
+            sitemap_mode=body.sitemap,
+            crawl_entire_domain=body.crawl_entire_domain,
+            allow_subdomains=body.allow_subdomains,
+            allow_external_links=body.allow_external_links,
+            max_concurrency=body.max_concurrency,
+            delay=body.delay,
+            ignore_robots_txt=body.ignore_robots_txt,
+            robots_user_agent=body.robots_user_agent,
+            scrape_options=body.scrape_options.model_dump(mode="json", by_alias=True)
+            if body.scrape_options
+            else None,
         )
     )
     return CrawlCreateResponse(id=job_id)
 
 
+@router.get("/v2/crawl/active", response_model=CrawlActiveResponse)
+async def list_active_crawls(
+    request: Request,
+    status: str = "processing",
+) -> CrawlActiveResponse:
+    """List all active crawl jobs.
+
+    Returns only jobs with ``kind: "crawl"``. By default returns jobs
+    with ``status: "processing"`` (excluding completed, failed, and
+    cancelled crawls). Filterable via the ``status`` query parameter.
+
+    Each item includes crawl-specific fields: ``url``, ``max_pages``,
+    ``max_depth``, ``completed``, ``total``, ``status``, and ``created_at``.
+
+    Returns an empty ``data`` array (HTTP 200) when no active crawls exist.
+    """
+    store: JobStore = request.app.state.job_store
+    jobs = store.list_active_jobs(kind="crawl", status=status, limit=50)
+    items: list[CrawlActiveItem] = []
+    for job in jobs:
+        payload = job.get("payload") or {}
+        url = payload.get("url") if isinstance(payload, dict) else None
+        max_pages = payload.get("max_pages") if isinstance(payload, dict) else None
+        max_depth = payload.get("max_depth") if isinstance(payload, dict) else None
+
+        # Get completed/total from data payload (set during crawl progress)
+        data = job.get("data") or {}
+        completed = data.get("completed", 0) if isinstance(data, dict) else 0
+        total = data.get("total", 0) if isinstance(data, dict) else 0
+
+        items.append(
+            CrawlActiveItem(
+                id=job["id"],
+                url=url,
+                status=job.get("status", "processing"),
+                created_at=job.get("created_at", ""),
+                completed=completed,
+                total=total,
+                max_pages=max_pages,
+                max_depth=max_depth,
+            )
+        )
+    return CrawlActiveResponse(data=items)
+
+
 @router.get("/v2/crawl/{job_id}", response_model=CrawlStatusResponse)
-async def get_crawl_status(request: Request, job_id: str):
+async def get_crawl_status(
+    request: Request,
+    job_id: str,
+    offset: int = 0,
+) -> CrawlStatusResponse:
+    """Get crawl job status and paginated results.
+
+    Supports pagination via the ``offset`` query parameter and ``next``
+    response field. When the serialized response exceeds ~10MB, a ``next``
+    URL is included in the response pointing to the next chunk.
+
+    Args:
+        request: FastAPI request object.
+        job_id: The crawl job UUID.
+        offset: Zero-based index of the first page to return in this chunk.
+            Used for paginated retrieval (default: 0). The ``next`` field
+            in the response points to the next offset.
+
+    Returns:
+        ``CrawlStatusResponse`` with ``data`` (paginated), ``next`` URL,
+        ``credits_used``, timestamps, and per-page metadata.
+    """
     store: JobStore = request.app.state.job_store
     job = store.get_job(job_id)
     if job is None:
         raise NotFoundError(detail="Job not found", details={"job_id": job_id})
     data = job.get("data") or {}
+    all_pages: list[dict] = data.get("pages", []) or []
+
+    # Compute duration in milliseconds from created_at to completed_at
+    created_at = job.get("created_at")
+    completed_at = job.get("completed_at")
+    duration: int | None = None
+    if created_at and completed_at:
+        try:
+            from datetime import datetime as _dt
+
+            created_dt = _dt.fromisoformat(created_at)
+            completed_dt = _dt.fromisoformat(completed_at)
+            duration = int((completed_dt - created_dt).total_seconds() * 1000)
+        except (ValueError, TypeError):
+            duration = None
+
+    # Determine the credits used (1 per completed page)
+    completed_count = data.get("completed", 0)
+    credits_used = completed_count or len(all_pages)
+
+    # ── Pagination: determine the chunk to return ───────────────
+    # We aim for each response to be under ~10MB to match Firecrawl's
+    # pagination behavior. Each page is roughly estimated at 10KB on
+    # average, so we return pages in chunks of ~1000.
+    # If the user provided an offset, slice from there.
+    # Otherwise, start from 0 and estimate chunk size.
+    _max_chunk_bytes = 10 * 1024 * 1024  # 10MB
+    _estimated_page_bytes = 10 * 1024  # ~10KB per page (conservative estimate)
+    _max_pages_per_chunk = max(1, _max_chunk_bytes // _estimated_page_bytes)
+
+    chunk_pages = all_pages[offset:]
+    next_url: str | None = None
+
+    # If the remaining pages might exceed the size limit, paginate
+    if len(chunk_pages) > _max_pages_per_chunk:
+        chunk_pages = all_pages[offset : offset + _max_pages_per_chunk]
+        next_offset = offset + _max_pages_per_chunk
+        if next_offset < len(all_pages):
+            # Build the next URL — use the request's base URL
+            scheme = request.url.scheme
+            host = request.url.netloc
+            path = request.url.path
+            next_url = f"{scheme}://{host}{path}?offset={next_offset}"
+    elif offset > 0 and not chunk_pages:
+        # Offset beyond end — return empty data
+        chunk_pages = []
+
     return CrawlStatusResponse(
         status=job.get("status", "processing"),
-        completed=data.get("completed", 0),
+        completed=completed_count,
         total=data.get("total", 0),
-        data=data.get("pages"),
+        credits_used=credits_used,
+        data=chunk_pages or (all_pages if offset == 0 else []),
         error=job.get("error"),
+        next=next_url,
+        created_at=created_at,
+        completed_at=completed_at,
+        expires_at=job.get("expires_at"),
+        duration=duration,
     )
 
 
 @router.delete("/v2/crawl/{job_id}", response_model=AgentCancelResponse)
-async def cancel_crawl(request: Request, job_id: str):
+async def cancel_crawl(request: Request, job_id: str) -> AgentCancelResponse:
     store: JobStore = request.app.state.job_store
     if not store.cancel_job(job_id):
         raise NotFoundError(
@@ -317,27 +605,218 @@ async def cancel_crawl(request: Request, job_id: str):
     return AgentCancelResponse(success=True)
 
 
+@router.get("/v2/crawl/{job_id}/stream")
+async def stream_crawl(request: Request, job_id: str) -> Any:
+    """Reconnect to a crawl SSE stream or replay completed results.
+
+    For a processing crawl, streams current progress plus future events.
+    For a completed crawl, replays all results as SSE events.
+    Returns 404 if the job does not exist.
+
+    SSE events include:
+        - ``page``: per-page data with url, markdown, metadata
+        - ``progress``: periodic progress with completed/total
+        - ``done``: final result with summary stats
+        - ``error``: per-page failure or overall failure
+    """
+    store: JobStore = request.app.state.job_store
+    job = store.get_job(job_id)
+    if job is None:
+        raise NotFoundError(detail="Job not found", details={"job_id": job_id})
+
+    status = job.get("status", "processing")
+    data = job.get("data") or {}
+    pages = data.get("pages", []) if isinstance(data, dict) else []
+    errors = data.get("errors", []) if isinstance(data, dict) else []
+    total = data.get("total", 0) if isinstance(data, dict) else 0
+    completed = data.get("completed", 0) if isinstance(data, dict) else 0
+
+    from fastapi.responses import StreamingResponse
+
+    async def event_stream() -> Any:
+        import json
+
+        event_id = 0
+
+        # Replay already-scraped pages
+        for page in pages:
+            event_id += 1
+            page_payload = {
+                "type": "page",
+                "url": page.get("url", ""),
+                "markdown": page.get("markdown", ""),
+                "metadata": page.get("metadata", {}),
+            }
+            yield f"id: {event_id}\ndata: {json.dumps(page_payload)}\n\n"
+
+        # Replay errors
+        for error_entry in errors:
+            event_id += 1
+            error_payload = {
+                "type": "error",
+                "url": error_entry.get("url", ""),
+                "error": error_entry.get("error", "Unknown error"),
+            }
+            yield f"id: {event_id}\ndata: {json.dumps(error_payload)}\n\n"
+
+        # Send final done event for completed/failed/cancelled jobs
+        if status == "completed":
+            event_id += 1
+            done_payload = {
+                "type": "done",
+                "id": job_id,
+                "status": "completed",
+                "pages": pages,
+                "total": total,
+                "completed": completed,
+                "latency_ms": 0,
+            }
+            yield f"id: {event_id}\ndata: {json.dumps(done_payload)}\n\n"
+        elif status == "failed":
+            event_id += 1
+            error_payload = {
+                "type": "error",
+                "content": job.get("error", "Crawl failed"),
+            }
+            yield f"id: {event_id}\ndata: {json.dumps(error_payload)}\n\n"
+        else:
+            # For processing/cancelled jobs, send current status
+            event_id += 1
+            progress_payload = {
+                "type": "progress",
+                "completed": completed,
+                "total": total or completed,
+                "status": status,
+            }
+            yield f"id: {event_id}\ndata: {json.dumps(progress_payload)}\n\n"
+            event_id += 1
+            done_payload = {
+                "type": "done",
+                "id": job_id,
+                "status": status,
+                "pages": pages,
+                "total": total or completed,
+                "completed": completed,
+                "latency_ms": 0,
+            }
+            yield f"id: {event_id}\ndata: {json.dumps(done_payload)}\n\n"
+
+        yield "data: [DONE]\n\n"
+
+    sse_headers = {
+        "Cache-Control": "no-cache",
+        "Connection": "keep-alive",
+        "Access-Control-Allow-Origin": "*",
+        "X-Accel-Buffering": "no",
+    }
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers=sse_headers,
+    )
+
+
+@router.post("/v2/crawl/params-preview", response_model=ParamsPreviewResponse)
+async def params_preview(
+    request: Request, body: ParamsPreviewRequest
+) -> ParamsPreviewResponse:
+    """Preview crawl parameters derived from a natural-language prompt.
+
+    Accepts a ``url`` and ``prompt``, translates the prompt into crawl
+    parameters using the LLM, and returns the derived parameters WITHOUT
+    starting a crawl job.
+
+    The endpoint is synchronous — no job ID is created.
+
+    Returns:
+        - ``include_paths``, ``exclude_paths``, ``max_depth``,
+          ``limit``, and other derived params
+        - ``error`` if the LLM is unavailable or returns invalid JSON
+          (the caller can still proceed with default crawl params)
+    """
+    from .nl_params import derive_crawl_params
+
+    llm_base_url = request.app.state.llm_base_url
+    llm_api_key = request.app.state.llm_api_key
+    llm_model = request.app.state.llm_model
+
+    result = await derive_crawl_params(
+        prompt=body.prompt,
+        llm_base_url=llm_base_url,
+        llm_api_key=llm_api_key,
+        llm_model=llm_model,
+    )
+
+    return ParamsPreviewResponse(
+        success=("error" not in result),
+        include_paths=result.get("include_paths"),
+        exclude_paths=result.get("exclude_paths"),
+        max_depth=result.get("max_depth"),
+        limit=result.get("max_pages"),
+        ignore_robots_txt=result.get("ignore_robots_txt"),
+        robots_user_agent=result.get("robots_user_agent"),
+        deduplicate_similar_urls=result.get("deduplicate_similar_urls"),
+        error=result.get("error"),
+    )
+
+
+@router.get("/v2/crawl/{job_id}/errors", response_model=CrawlErrorsResponse)
+async def get_crawl_errors(request: Request, job_id: str) -> CrawlErrorsResponse:
+    """Return per-URL errors and robots-blocked URLs for a crawl job.
+
+    Returns a ``CrawlErrorsResponse`` with:
+
+    - ``errors``: list of error objects. Each has ``url``, ``error``
+      (human-readable message), ``error_type`` (machine-readable
+      category), ``error_code``, and ``timestamp``.
+    - ``robots_blocked``: subset of ``errors`` containing only URLs that
+      were blocked by robots.txt or politeness rate limiting. Each entry
+      has ``error_type: "robots_blocked"``.
+
+    Scraper failures appear in ``errors`` but NOT in ``robots_blocked``.
+    Politeness/robots.txt blocks appear in BOTH arrays.
+
+    Returns 404 for unknown job IDs. Returns empty arrays for successful
+    crawls with no errors. Errors persist until the job TTL expires (24h
+    after creation).
+    """
+    store: JobStore = request.app.state.job_store
+    job = store.get_job(job_id)
+    if job is None:
+        raise NotFoundError(detail="Job not found", details={"job_id": job_id})
+    data = job.get("data") or {}
+    raw_errors: list[dict] = data.get("errors", [])
+    raw_robots_blocked: list[dict] = data.get("robots_blocked", [])
+    return CrawlErrorsResponse(
+        success=True,
+        errors=[CrawlErrorItem(**e) for e in raw_errors],
+        robots_blocked=[CrawlErrorItem(**e) for e in raw_robots_blocked],
+    )
+
+
 @router.post("/v2/batch/scrape", response_model=CrawlCreateResponse)
-async def create_batch_scrape(request: Request, body: BatchScrapeRequest):
+async def create_batch_scrape(
+    request: Request, body: BatchScrapeRequest
+) -> CrawlCreateResponse:
     store: JobStore = request.app.state.job_store
     job_id = store.create_job(kind="batch_scrape", payload=body.model_dump())
-    import asyncio
 
     from .worker import _process_batch_scrape_async
 
-    asyncio.create_task(
+    request.app.state.task_tracker.create_background_task(
         _process_batch_scrape_async(
             job_id=job_id,
             urls=body.urls,
             scraper_url=request.app.state.scraper_url,
             webhook_config=body.webhook,
+            task_tracker=request.app.state.task_tracker,
         )
     )
     return CrawlCreateResponse(id=job_id)
 
 
 @router.post("/v1/search")
-async def search_v1(request: Request, body: SearchRequest):
+async def search_v1(request: Request, body: SearchRequest) -> dict[str, Any]:
     """Firecrawl v1-compatible search endpoint.
 
     Returns a flat data array (v1 format) rather than the nested
@@ -369,7 +848,7 @@ async def search_v1(request: Request, body: SearchRequest):
 
 
 @router.post("/v2/search", response_model=SearchResponse)
-async def search(request: Request, body: SearchRequest):
+async def search(request: Request, body: SearchRequest) -> SearchResponse:
     from .searxng_client import SearXNGClient
 
     searxng = SearXNGClient(request.app.state.searxng_url)
@@ -473,7 +952,7 @@ async def search(request: Request, body: SearchRequest):
                         contents.append("")
 
                 # Embed query + document contents
-                texts = [body.query] + contents
+                texts = [body.query, *contents]
                 embeddings = await semantic.embed(texts)
                 query_embedding = embeddings[0]
                 doc_embeddings = embeddings[1:]
@@ -493,7 +972,10 @@ async def search(request: Request, body: SearchRequest):
                 else:
                     # Cosine similarity reranking (vectors are L2-normalized, so cosine = dot product)
                     similarities = [
-                        sum(a * b for a, b in zip(query_embedding, doc_emb))
+                        sum(
+                            a * b
+                            for a, b in zip(query_embedding, doc_emb, strict=False)
+                        )
                         for doc_emb in doc_embeddings
                     ]
                     ranked_indices = sorted(
@@ -526,11 +1008,16 @@ async def search(request: Request, body: SearchRequest):
             "keyword",
             "semantic",
             "hybrid",
+            "vector",
+            "hybrid_vector",
         ):
             from .research import run_rich_search
 
             output = await run_rich_search(
-                search_results=results,
+                search_results=[
+                    {"url": r.url, "title": r.title, "description": r.description}
+                    for r in search_results
+                ],
                 query=body.query,
                 limit=body.limit,
                 output_schema=body.output_schema,
@@ -547,7 +1034,7 @@ async def search(request: Request, body: SearchRequest):
 
 
 @router.post("/v2/answer", response_model=AnswerResponse)
-async def answer(request: Request, body: AnswerRequest, response: Response):
+async def answer(request: Request, body: AnswerRequest, response: Response) -> Any:
     """Grounded Q&A: search → scrape → LLM → citations.
 
     Synchronous single-turn endpoint. For streaming, set ``stream: true``
@@ -580,7 +1067,7 @@ async def answer(request: Request, body: AnswerRequest, response: Response):
     if body.stream:
         from fastapi.responses import StreamingResponse
 
-        async def event_stream():
+        async def event_stream() -> Any:
             from .research import run_answer_stream
 
             async for event in run_answer_stream(
@@ -691,17 +1178,18 @@ async def enrich(request: Request, body: EnrichRequest):
 
 
 @router.post("/v2/extract", response_model=ExtractCreateResponse)
-async def create_extract(request: Request, body: ExtractRequest):
+async def create_extract(
+    request: Request, body: ExtractRequest
+) -> ExtractCreateResponse:
     """Extract structured data from provided URLs."""
     store: JobStore = request.app.state.job_store
     job_id = store.create_job(
         kind="extract", payload=body.model_dump(exclude_none=True, by_alias=True)
     )
-    import asyncio
 
     from .worker import _process_extract_async
 
-    asyncio.create_task(
+    request.app.state.task_tracker.create_background_task(
         _process_extract_async(
             job_id=job_id,
             urls=body.urls,
@@ -718,7 +1206,7 @@ async def create_extract(request: Request, body: ExtractRequest):
 
 
 @router.get("/v2/extract/{job_id}", response_model=ExtractStatusResponse)
-async def get_extract_status(request: Request, job_id: str):
+async def get_extract_status(request: Request, job_id: str) -> ExtractStatusResponse:
     """Get extract job status and results."""
     store: JobStore = request.app.state.job_store
     job = store.get_job(job_id)
@@ -737,28 +1225,39 @@ async def get_extract_status(request: Request, job_id: str):
 
 
 @router.post("/v2/map", response_model=MapResponse)
-async def map_site(request: Request, body: MapRequest):
+async def map_site(request: Request, body: MapRequest) -> MapResponse:
     try:
         async with httpx.AsyncClient(follow_redirects=True, timeout=15) as client:
             resp = await client.get(body.url)
             if resp.status_code != 200:
                 raise UpstreamError(detail=f"Site returned HTTP {resp.status_code}")
-            soup = BeautifulSoup(resp.text, "html.parser")
-            links: list[str] = []
-            for a in soup.find_all("a", href=True):
-                href = a["href"]
-                if href.startswith("/"):
-                    href = f"{extract_domain(body.url, include_scheme=True)}{href}"
-                if href.startswith(body.url.rstrip("/")) or is_same_origin(
-                    body.url, href
-                ):
-                    if href not in links:
-                        links.append(href)
-                        if len(links) >= body.limit:
-                            break
+
+            # Use shared LinkExtractor instead of inline BeautifulSoup parsing
+            from urllib.parse import urlparse
+
+            from .link_extractor import extract_links, filter_links
+
+            all_links = extract_links(resp.text, body.url)
+
+            # Filter links by domain scope (default: same-origin only)
+            base_domain = (urlparse(body.url).hostname or "").lower()
+            filtered = filter_links(
+                all_links,
+                base_domain=base_domain,
+                allow_subdomains=body.allow_subdomains,
+                allow_external_links=body.allow_external_links,
+            )
+
+            # Apply limit (truncates AFTER filtering)
+            result = filtered[: body.limit]
+
+            # Apply search filter (case-insensitive substring match)
             if body.search:
-                links = [l for l in links if body.search.lower() in l.lower()]
-            return MapResponse(links=links)
+                result = [
+                    link for link in result if body.search.lower() in link.lower()
+                ]
+
+            return MapResponse(links=result)
     except Exception as e:
         logger.error("Map failed for %s: %s", body.url, e)
         raise UpstreamError(detail=str(e)) from e
@@ -770,8 +1269,8 @@ BROWSER_SVC_URL = "http://browser-svc:8012"
 
 
 async def _browser_proxy(
-    path: str, method: str = "POST", json_data: dict | None = None
-) -> dict:
+    path: str, method: str = "POST", json_data: dict[str, Any] | None = None
+) -> Any:
     """Proxy a request to the browser service."""
     async with httpx.AsyncClient(timeout=120) as client:
         if method == "GET":
@@ -787,7 +1286,7 @@ async def _browser_proxy(
 
 
 @router.post("/v2/browser", response_model=BrowserCreateResponse)
-async def create_browser(body: BrowserCreateRequest):
+async def create_browser(body: BrowserCreateRequest) -> BrowserCreateResponse:
     result = await _browser_proxy("/browsers", json_data=body.model_dump())
     if not result.get("success"):
         raise BrowserError(
@@ -797,7 +1296,9 @@ async def create_browser(body: BrowserCreateRequest):
 
 
 @router.post("/v2/browser/{session_id}/execute", response_model=BrowserExecuteResponse)
-async def execute_browser(session_id: str, body: BrowserExecuteRequest):
+async def execute_browser(
+    session_id: str, body: BrowserExecuteRequest
+) -> BrowserExecuteResponse:
     result = await _browser_proxy(
         f"/browsers/{session_id}/execute", json_data=body.model_dump()
     )
@@ -807,13 +1308,13 @@ async def execute_browser(session_id: str, body: BrowserExecuteRequest):
 
 
 @router.get("/v2/browser", response_model=BrowserListResponse)
-async def list_browsers():
+async def list_browsers() -> BrowserListResponse:
     result = await _browser_proxy("/browsers", method="GET")
     return BrowserListResponse(sessions=result.get("sessions", []))
 
 
 @router.delete("/v2/browser/{session_id}", response_model=BrowserDeleteResponse)
-async def destroy_browser(session_id: str):
+async def destroy_browser(session_id: str) -> BrowserDeleteResponse:
     result = await _browser_proxy(f"/browsers/{session_id}", method="DELETE")
     if not result.get("success"):
         raise NotFoundError(
@@ -826,7 +1327,7 @@ async def destroy_browser(session_id: str):
 
 
 @router.post("/v2/monitor", response_model=MonitorResponse)
-async def create_monitor(body: MonitorCreateRequest):
+async def create_monitor(body: MonitorCreateRequest) -> MonitorResponse:
     import uuid
     from datetime import datetime
 
@@ -844,12 +1345,12 @@ async def create_monitor(body: MonitorCreateRequest):
         url=body.url,
         schedule=body.schedule,
         webhook=body.webhook,
-        created_at=config["created_at"],
+        created_at=config["created_at"],  # type: ignore[arg-type]
     )
 
 
 @router.get("/v2/monitor", response_model=MonitorListResponse)
-async def list_monitors():
+async def list_monitors() -> MonitorListResponse:
     monitors = get_all_monitors()
     items = []
     for mid, cfg in monitors.items():
@@ -861,14 +1362,14 @@ async def list_monitors():
                 webhook=cfg.get("webhook"),
                 last_checked=cfg.get("last_checked"),
                 last_result=cfg.get("last_result"),
-                created_at=cfg.get("created_at", ""),
+                created_at=cfg.get("created_at") or "",  # type: ignore[arg-type]
             )
         )
     return MonitorListResponse(monitors=items)
 
 
 @router.get("/v2/monitor/{monitor_id}", response_model=MonitorResponse)
-async def get_monitor_status(monitor_id: str):
+async def get_monitor_status(monitor_id: str) -> MonitorResponse:
     cfg = get_monitor(monitor_id)
     if cfg is None:
         raise NotFoundError(
@@ -881,12 +1382,14 @@ async def get_monitor_status(monitor_id: str):
         webhook=cfg.get("webhook"),
         last_checked=cfg.get("last_checked"),
         last_result=cfg.get("last_result"),
-        created_at=cfg.get("created_at", ""),
+        created_at=cfg.get("created_at") or "",  # type: ignore[arg-type]
     )
 
 
 @router.patch("/v2/monitor/{monitor_id}", response_model=MonitorResponse)
-async def update_monitor(monitor_id: str, body: MonitorUpdateRequest):
+async def update_monitor(
+    monitor_id: str, body: MonitorUpdateRequest
+) -> MonitorResponse:
     cfg = get_monitor(monitor_id)
     if cfg is None:
         raise NotFoundError(
@@ -906,12 +1409,12 @@ async def update_monitor(monitor_id: str, body: MonitorUpdateRequest):
         webhook=cfg.get("webhook"),
         last_checked=cfg.get("last_checked"),
         last_result=cfg.get("last_result"),
-        created_at=cfg.get("created_at", ""),
+        created_at=cfg.get("created_at") or "",  # type: ignore[arg-type]
     )
 
 
 @router.delete("/v2/monitor/{monitor_id}", response_model=MonitorDeleteResponse)
-async def delete_monitor_route(monitor_id: str):
+async def delete_monitor_route(monitor_id: str) -> MonitorDeleteResponse:
     cfg = get_monitor(monitor_id)
     if cfg is None:
         raise NotFoundError(
@@ -927,7 +1430,7 @@ PARSE_SVC_URL = "http://parse-svc:8013"
 
 
 @router.post("/v2/parse", response_model=ParseResponse)
-async def parse_file(request: Request):
+async def parse_file(request: Request) -> Any:
     """Upload a file and get its content as markdown."""
     import httpx
 
@@ -937,17 +1440,17 @@ async def parse_file(request: Request):
             detail="No file provided. Use multipart form with 'file' field."
         )
 
-    upload = form["file"]
-    content = await upload.read()
+    upload = form["file"]  # type: ignore[union-attr]
+    content = await upload.read()  # type: ignore[union-attr]
 
     async with httpx.AsyncClient(timeout=120) as client:
         resp = await client.post(
             f"{PARSE_SVC_URL}/parse",
             files={
                 "file": (
-                    upload.filename or "file",
+                    upload.filename or "file",  # type: ignore[union-attr]
                     content,
-                    upload.content_type or "application/octet-stream",
+                    upload.content_type or "application/octet-stream",  # type: ignore[union-attr]
                 )
             },
         )
@@ -963,15 +1466,16 @@ async def parse_file(request: Request):
 
 
 @router.post("/v2/generate-llmstxt", response_model=LLMsTextCreateResponse)
-async def create_llmstxt(request: Request, body: LLMsTextRequest):
+async def create_llmstxt(
+    request: Request, body: LLMsTextRequest
+) -> LLMsTextCreateResponse:
     """Generate an llms.txt file for a website."""
     store: JobStore = request.app.state.job_store
     job_id = store.create_job(kind="llmstxt", payload=body.model_dump())
-    import asyncio
 
     from .worker import _process_llmstxt_async
 
-    asyncio.create_task(
+    request.app.state.task_tracker.create_background_task(
         _process_llmstxt_async(
             job_id=job_id,
             url=body.url,
@@ -984,7 +1488,7 @@ async def create_llmstxt(request: Request, body: LLMsTextRequest):
 
 
 @router.get("/v2/generate-llmstxt/{job_id}", response_model=LLMsTextStatusResponse)
-async def get_llmstxt_status(request: Request, job_id: str):
+async def get_llmstxt_status(request: Request, job_id: str) -> LLMsTextStatusResponse:
     """Get llms.txt generation job status and results."""
     store: JobStore = request.app.state.job_store
     job = store.get_job(job_id)
@@ -999,13 +1503,20 @@ async def get_llmstxt_status(request: Request, job_id: str):
     )
 
 
-async def _index_scrape(url: str, title: str, content: str, request) -> None:
+async def _index_scrape(url: str, title: str, content: str, request: Request) -> None:
     """Fire-and-forget index a scraped page in the vector index."""
+    semantic = None
     try:
         from .semantic_client import SemanticClient
 
         semantic = SemanticClient(request.app.state.semantic_url)
         await semantic.index_page(url, title, content[:2000])
-        await semantic.close()
     except Exception:
-        pass
+        logger.warning(
+            "Semantic indexing failed for %s — page will not appear in vector search",
+            url,
+            exc_info=True,
+        )
+    finally:
+        if semantic is not None:
+            await semantic.close()

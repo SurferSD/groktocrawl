@@ -38,17 +38,17 @@ async def fetch_meta_tags(url: str, timeout: int = 15) -> dict:
             # <title>
             title_tag = soup.find("title")
             if title_tag and title_tag.string:
-                result["title"] = title_tag.string.strip()
+                result["title"] = str(title_tag.string).strip()
 
             # <meta name="description" content="...">
             meta_desc = soup.find("meta", attrs={"name": "description"})
             if meta_desc and meta_desc.get("content"):
-                result["description"] = meta_desc["content"].strip()
+                result["description"] = str(meta_desc["content"]).strip()
 
             # <meta property="og:description" content="...">
             og_desc = soup.find("meta", attrs={"property": "og:description"})
             if og_desc and og_desc.get("content"):
-                result["og_description"] = og_desc["content"].strip()
+                result["og_description"] = str(og_desc["content"]).strip()
 
     except Exception as e:
         logger.warning("Meta fetch failed for %s: %s", url, e)

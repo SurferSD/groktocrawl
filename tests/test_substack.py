@@ -11,18 +11,14 @@ Tests cover:
 from __future__ import annotations
 
 import time
-import xml.etree.ElementTree as ET
-
-import pytest
 
 from scraper.adapters.substack import (
+    _SUBSTACK_URL_PATTERNS,
     _find_item_by_link,
     _is_substack_origin,
     _parse_rss_items,
     _rss_content_to_markdown,
-    _SUBSTACK_URL_PATTERNS,
 )
-
 
 # ── URL pattern tests ────────────────────────────────────────────
 
@@ -67,6 +63,7 @@ def test_substack_com_domain_returns_true():
 def test_substack_com_domain_cached():
     # Reset cache state
     from scraper.adapters.substack import _VANITY_CACHE
+
     _VANITY_CACHE.clear()
     result = _is_substack_origin("https://gibson.substack.com")
     assert result is True
@@ -106,7 +103,9 @@ SAMPLE_ITEMS = [
 
 
 def test_find_item_by_exact_link():
-    result = _find_item_by_link(SAMPLE_ITEMS, "https://gibson.substack.com/p/my-first-post")
+    result = _find_item_by_link(
+        SAMPLE_ITEMS, "https://gibson.substack.com/p/my-first-post"
+    )
     assert result is not None
     assert result["title"] == "My First Post"
 
@@ -121,13 +120,17 @@ def test_find_item_with_trailing_slash():
 
 
 def test_find_item_by_slug():
-    result = _find_item_by_link(SAMPLE_ITEMS, "https://gibson.substack.com/p/my-first-post?ref=foo")
+    result = _find_item_by_link(
+        SAMPLE_ITEMS, "https://gibson.substack.com/p/my-first-post?ref=foo"
+    )
     assert result is not None
     assert result["title"] == "My First Post"
 
 
 def test_find_item_not_found():
-    result = _find_item_by_link(SAMPLE_ITEMS, "https://gibson.substack.com/p/non-existent-post")
+    result = _find_item_by_link(
+        SAMPLE_ITEMS, "https://gibson.substack.com/p/non-existent-post"
+    )
     assert result is None
 
 
@@ -203,7 +206,7 @@ def test_parse_invalid_xml():
 
 def test_parse_rss_no_items():
     items = _parse_rss_items(
-        '<rss><channel><title><![CDATA[Empty]]></title></channel></rss>'
+        "<rss><channel><title><![CDATA[Empty]]></title></channel></rss>"
     )
     assert items == []
 
@@ -246,6 +249,7 @@ def test_html_with_script_style_stripped():
 
 def test_vanity_cache_standard_substack():
     from scraper.adapters.substack import _VANITY_CACHE
+
     _VANITY_CACHE.clear()
     _is_substack_origin("https://test.substack.com")
     assert _VANITY_CACHE["https://test.substack.com"][1] is True
@@ -253,6 +257,7 @@ def test_vanity_cache_standard_substack():
 
 def test_vanity_cache_ttl():
     from scraper.adapters.substack import _VANITY_CACHE
+
     _VANITY_CACHE.clear()
     _is_substack_origin("https://test.substack.com")
     expires_at, value = _VANITY_CACHE["https://test.substack.com"]

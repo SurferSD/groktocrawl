@@ -29,7 +29,6 @@ from __future__ import annotations
 import logging
 import os
 import re
-from urllib.parse import urlparse
 
 import httpx
 
@@ -45,6 +44,7 @@ REST_API = "https://api.github.com"
 
 # ── Resource types ───────────────────────────────────────────────
 
+
 class ResourceType:
     ISSUE = "issue"
     PULL = "pull"
@@ -58,39 +58,60 @@ class ResourceType:
 # ── URL patterns ────────────────────────────────────────────────
 
 _URL_PATTERNS: list[tuple[re.Pattern, str]] = [
-    (re.compile(
-        r"^https?://(?:www\.)?github\.com/"
-        r"(?P<owner>[^/]+)/(?P<repo>[^/]+)/issues/(?P<number>\d+)$"
-    ), ResourceType.ISSUE),
-    (re.compile(
-        r"^https?://(?:www\.)?github\.com/"
-        r"(?P<owner>[^/]+)/(?P<repo>[^/]+)/pull/(?P<number>\d+)$"
-    ), ResourceType.PULL),
-    (re.compile(
-        r"^https?://(?:www\.)?github\.com/"
-        r"(?P<owner>[^/]+)/(?P<repo>[^/]+)/discussions/(?P<number>\d+)$"
-    ), ResourceType.DISCUSSION),
+    (
+        re.compile(
+            r"^https?://(?:www\.)?github\.com/"
+            r"(?P<owner>[^/]+)/(?P<repo>[^/]+)/issues/(?P<number>\d+)$"
+        ),
+        ResourceType.ISSUE,
+    ),
+    (
+        re.compile(
+            r"^https?://(?:www\.)?github\.com/"
+            r"(?P<owner>[^/]+)/(?P<repo>[^/]+)/pull/(?P<number>\d+)$"
+        ),
+        ResourceType.PULL,
+    ),
+    (
+        re.compile(
+            r"^https?://(?:www\.)?github\.com/"
+            r"(?P<owner>[^/]+)/(?P<repo>[^/]+)/discussions/(?P<number>\d+)$"
+        ),
+        ResourceType.DISCUSSION,
+    ),
     # /releases/tag/{tag} — specific release
-    (re.compile(
-        r"^https?://(?:www\.)?github\.com/"
-        r"(?P<owner>[^/]+)/(?P<repo>[^/]+)/releases/tag/(?P<tag>.+)$"
-    ), ResourceType.RELEASE),
+    (
+        re.compile(
+            r"^https?://(?:www\.)?github\.com/"
+            r"(?P<owner>[^/]+)/(?P<repo>[^/]+)/releases/tag/(?P<tag>.+)$"
+        ),
+        ResourceType.RELEASE,
+    ),
     # /releases/latest — latest release
-    (re.compile(
-        r"^https?://(?:www\.)?github\.com/"
-        r"(?P<owner>[^/]+)/(?P<repo>[^/]+)/releases/latest$"
-    ), ResourceType.RELEASE),
+    (
+        re.compile(
+            r"^https?://(?:www\.)?github\.com/"
+            r"(?P<owner>[^/]+)/(?P<repo>[^/]+)/releases/latest$"
+        ),
+        ResourceType.RELEASE,
+    ),
     # /releases — release list
-    (re.compile(
-        r"^https?://(?:www\.)?github\.com/"
-        r"(?P<owner>[^/]+)/(?P<repo>[^/]+)/releases/?$"
-    ), ResourceType.RELEASE_LIST),
+    (
+        re.compile(
+            r"^https?://(?:www\.)?github\.com/"
+            r"(?P<owner>[^/]+)/(?P<repo>[^/]+)/releases/?$"
+        ),
+        ResourceType.RELEASE_LIST,
+    ),
     # /commit/{sha}
-    (re.compile(
-        r"^https?://(?:www\.)?github\.com/"
-        r"(?P<owner>[^/]+)/(?P<repo>[^/]+)/commit/"
-        r"(?P<sha>[a-fA-F0-9]{6,40})$"
-    ), ResourceType.COMMIT),
+    (
+        re.compile(
+            r"^https?://(?:www\.)?github\.com/"
+            r"(?P<owner>[^/]+)/(?P<repo>[^/]+)/commit/"
+            r"(?P<sha>[a-fA-F0-9]{6,40})$"
+        ),
+        ResourceType.COMMIT,
+    ),
 ]
 
 
@@ -107,6 +128,7 @@ def _classify_url(url: str) -> tuple[str, dict[str, str] | None]:
 
 
 # ── Auth ─────────────────────────────────────────────────────────
+
 
 def _get_token() -> str:
     return os.environ.get("GITHUB_TOKEN", "")
@@ -129,6 +151,7 @@ def _rest_headers() -> dict[str, str]:
 
 # ── GraphQL client ──────────────────────────────────────────────
 
+
 async def _graphql(query: str, variables: dict) -> dict | None:
     """Execute a GraphQL query. Returns the ``data`` dict or None."""
     token = _get_token()
@@ -139,7 +162,10 @@ async def _graphql(query: str, variables: dict) -> dict | None:
             resp = await client.post(
                 GRAPHQL_URL,
                 json={"query": query, "variables": variables},
-                headers={"Authorization": f"Bearer {token}", "User-Agent": "GroktoCrawl/0.6.0"},
+                headers={
+                    "Authorization": f"Bearer {token}",
+                    "User-Agent": "GroktoCrawl/0.6.0",
+                },
             )
             if resp.status_code != 200:
                 return None
@@ -156,6 +182,7 @@ async def _graphql(query: str, variables: dict) -> dict | None:
 
 # ── HTML scrape fallback (when GraphQL + REST both fail) ────────
 
+
 async def _html_scrape(url: str) -> dict | None:
     """Fetch a GitHub page's HTML and extract readable content.
 
@@ -170,13 +197,16 @@ async def _html_scrape(url: str) -> dict | None:
     """
     try:
         async with httpx.AsyncClient(follow_redirects=True, timeout=15) as client:
-            resp = await client.get(url, headers={
-                "User-Agent": (
-                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                    "AppleWebKit/537.36 (KHTML, like Gecko) "
-                    "Chrome/131.0.0.0 Safari/537.36"
-                ),
-            })
+            resp = await client.get(
+                url,
+                headers={
+                    "User-Agent": (
+                        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                        "AppleWebKit/537.36 (KHTML, like Gecko) "
+                        "Chrome/131.0.0.0 Safari/537.36"
+                    ),
+                },
+            )
             if resp.status_code != 200:
                 logger.debug("HTML scrape returned %d for %s", resp.status_code, url)
                 return None
@@ -187,6 +217,7 @@ async def _html_scrape(url: str) -> dict | None:
 
             # readability-lxml extracts the main content from HTML
             from readability import Document
+
             doc = Document(html)
             content_html = doc.summary()
             title = doc.title()
@@ -196,6 +227,7 @@ async def _html_scrape(url: str) -> dict | None:
 
             # markdownify converts HTML to markdown
             from markdownify import markdownify as md
+
             content_md = md(content_html, heading_style="ATX")
 
             return {
@@ -212,6 +244,7 @@ async def _html_scrape(url: str) -> dict | None:
 
 
 # ── REST helpers ────────────────────────────────────────────────
+
 
 async def _rest_get(path: str, params: dict | None = None) -> dict | list | None:
     """Make a REST GET request to the GitHub API."""
@@ -369,6 +402,7 @@ query($owner: String!, $repo: String!, $sha: GitObjectID!) {
 # RENDERERS
 # ═══════════════════════════════════════════════════════════════════
 
+
 def _fmt_labels(labels: list) -> str:
     if not labels:
         return ""
@@ -424,9 +458,13 @@ def _render_issue(data: dict) -> tuple[str, dict]:
     labels = data.get("labels", [])
     comment_count = data.get("comment_count", len(comments))
     meta: dict = {
-        "source": "github-social-adapter", "resource": ResourceType.ISSUE,
-        "title": title, "state": state, "author": author,
-        "created": created, "comment_count": comment_count,
+        "source": "github-social-adapter",
+        "resource": ResourceType.ISSUE,
+        "title": title,
+        "state": state,
+        "author": author,
+        "created": created,
+        "comment_count": comment_count,
     }
     if labels:
         meta["labels"] = [l.get("name", "") for l in labels]
@@ -457,13 +495,21 @@ def _render_pull(data: dict) -> tuple[str, dict]:
         commits_total = data["commits"].get("totalCount", "?")
 
     parts.append(f"# {title}\n")
-    parts.append(f"{state_icon} **{state_label}** by **@{author}** · `{base} ← {head}` · _{created}_")
+    parts.append(
+        f"{state_icon} **{state_label}** by **@{author}** · `{base} ← {head}` · _{created}_"
+    )
     parts.append(_fmt_labels(data.get("labels", [])))
-    parts.append(f"\n📊 **+{adds} / -{dels}** across {files} files · {commits_total} commits")
+    parts.append(
+        f"\n📊 **+{adds} / -{dels}** across {files} files · {commits_total} commits"
+    )
 
     mergeable = data.get("mergeable", "")
     if mergeable and mergeable not in ("UNKNOWN", "UNKNOWN"):
-        parts.append("🔀 ✅ mergeable" if mergeable == "MERGEABLE" else f"🔀 ⚠️ {mergeable.lower()}")
+        parts.append(
+            "🔀 ✅ mergeable"
+            if mergeable == "MERGEABLE"
+            else f"🔀 ⚠️ {mergeable.lower()}"
+        )
     parts.append("")
 
     body = _fmt_body(data.get("body"))
@@ -479,7 +525,9 @@ def _render_pull(data: dict) -> tuple[str, dict]:
         icons = {"added": "✅", "modified": "📝", "removed": "🗑️", "renamed": "📎"}
         for f in files_list:
             icon = icons.get(f.get("status", ""), "📄")
-            parts.append(f"- {icon} `{f['filename']}` (+{f.get('additions',0)}/-{f.get('deletions',0)})")
+            parts.append(
+                f"- {icon} `{f['filename']}` (+{f.get('additions', 0)}/-{f.get('deletions', 0)})"
+            )
         parts.append("")
 
     # Reviews
@@ -490,8 +538,12 @@ def _render_pull(data: dict) -> tuple[str, dict]:
         reviews = []
     if reviews:
         parts.append("---\n## Reviews\n")
-        state_labels = {"APPROVED": "✅ Approved", "CHANGES_REQUESTED": "❌ Changes Requested",
-                        "COMMENTED": "💬 Commented", "DISMISSED": "🔇 Dismissed"}
+        state_labels = {
+            "APPROVED": "✅ Approved",
+            "CHANGES_REQUESTED": "❌ Changes Requested",
+            "COMMENTED": "💬 Commented",
+            "DISMISSED": "🔇 Dismissed",
+        }
         for rv in reviews:
             rl = state_labels.get(rv.get("state", ""), f"📝 {rv.get('state', '')}")
             ra = rv.get("author", {}).get("login", "unknown")
@@ -516,10 +568,16 @@ def _render_pull(data: dict) -> tuple[str, dict]:
                 parts.append("")
 
     meta: dict = {
-        "source": "github-social-adapter", "resource": ResourceType.PULL,
-        "title": title, "state": state_label, "author": author,
-        "created": created, "additions": adds, "deletions": dels,
-        "changed_files": files, "comment_count": len(comments),
+        "source": "github-social-adapter",
+        "resource": ResourceType.PULL,
+        "title": title,
+        "state": state_label,
+        "author": author,
+        "created": created,
+        "additions": adds,
+        "deletions": dels,
+        "changed_files": files,
+        "comment_count": len(comments),
     }
     if merged:
         meta["merged"] = True
@@ -558,8 +616,8 @@ def _render_discussion(data: dict) -> tuple[str, dict]:
     # Answer (for Q&A discussions)
     answer = data.get("answer")
     if answer and isinstance(answer, dict):
-        aa = answer.get("author", {}).get("login", "unknown")
-        ad = (answer.get("createdAt", "") or "")[:10]
+        answer.get("author", {}).get("login", "unknown")
+        (answer.get("createdAt", "") or "")[:10]
         ab = _fmt_body(answer.get("body"))
         parts.append("---\n## ✅ Answer  by @{aa}  _({ad})_\n")
         if ab:
@@ -590,9 +648,13 @@ def _render_discussion(data: dict) -> tuple[str, dict]:
                     parts.append("")
 
     meta: dict = {
-        "source": "github-social-adapter", "resource": ResourceType.DISCUSSION,
-        "title": title, "author": author, "created": created,
-        "upvote_count": upvotes, "is_answered": answered,
+        "source": "github-social-adapter",
+        "resource": ResourceType.DISCUSSION,
+        "title": title,
+        "author": author,
+        "created": created,
+        "upvote_count": upvotes,
+        "is_answered": answered,
         "comment_count": len(comments) if isinstance(comments, list) else 0,
     }
     if cat_name:
@@ -614,8 +676,10 @@ def _render_release(data: dict) -> tuple[str, dict]:
     description = _fmt_body(data.get("description", ""))
 
     status = []
-    if is_draft: status.append("📝 draft")
-    if is_prerelease: status.append("⚠️ prerelease")
+    if is_draft:
+        status.append("📝 draft")
+    if is_prerelease:
+        status.append("⚠️ prerelease")
 
     parts.append(f"# {name}\n")
     parts.append(f"🏷️ `{tag}` by **@{author}** · _{published}_")
@@ -633,7 +697,7 @@ def _render_release(data: dict) -> tuple[str, dict]:
     if isinstance(assets_data, dict):
         assets = assets_data.get("nodes", [])
         if assets:
-            parts.append("---\n## Assets ({})\n".format(len(assets)))
+            parts.append(f"---\n## Assets ({len(assets)})\n")
             for a in assets:
                 an = a.get("name", "")
                 asize = a.get("size", 0)
@@ -643,10 +707,14 @@ def _render_release(data: dict) -> tuple[str, dict]:
             parts.append("")
 
     meta: dict = {
-        "source": "github-social-adapter", "resource": ResourceType.RELEASE,
-        "name": name, "tag": tag, "author": author,
+        "source": "github-social-adapter",
+        "resource": ResourceType.RELEASE,
+        "name": name,
+        "tag": tag,
+        "author": author,
         "published": published,
-        "prerelease": is_prerelease, "draft": is_draft,
+        "prerelease": is_prerelease,
+        "draft": is_draft,
     }
     if isinstance(assets_data, dict):
         assets = assets_data.get("nodes", [])
@@ -677,8 +745,10 @@ def _render_release_list(data: dict) -> tuple[str, dict]:
     parts.append("")
 
     meta: dict = {
-        "source": "github-social-adapter", "resource": ResourceType.RELEASE_LIST,
-        "total_releases": total, "count": len(nodes),
+        "source": "github-social-adapter",
+        "resource": ResourceType.RELEASE_LIST,
+        "total_releases": total,
+        "count": len(nodes),
     }
     return "\n".join(parts).strip(), meta
 
@@ -690,16 +760,22 @@ def _render_commit(data: dict) -> tuple[str, dict]:
     message = _fmt_body(data.get("message", ""))
     author_obj = data.get("author", {}) or {}
     committer_obj = data.get("committer", {}) or {}
-    author_name = author_obj.get("name", author_obj.get("user", {}).get("login", "unknown"))
+    author_name = author_obj.get(
+        "name", author_obj.get("user", {}).get("login", "unknown")
+    )
     author_date = (author_obj.get("date", "") or "")[:10]
-    committer_name = committer_obj.get("name", committer_obj.get("user", {}).get("login", ""))
-    url = data.get("url", "")
+    committer_name = committer_obj.get(
+        "name", committer_obj.get("user", {}).get("login", "")
+    )
+    data.get("url", "")
     parents = [p.get("oid", "")[:7] for p in (data.get("parents", {}).get("nodes", []))]
 
     parts.append(f"# {headline or sha}\n")
     parts.append(f"🔖 `{data.get('oid', '')}` by **{author_name}** · _{author_date}_")
     if parents:
-        parts.append(f"👪 parent{'s' if len(parents) > 1 else ''}: {', '.join(parents)}")
+        parts.append(
+            f"👪 parent{'s' if len(parents) > 1 else ''}: {', '.join(parents)}"
+        )
     if committer_name and committer_name != author_name:
         parts.append(f"📦 committed by {committer_name}")
     parts.append("")
@@ -729,9 +805,12 @@ def _render_commit(data: dict) -> tuple[str, dict]:
             parts.append("")
 
     meta: dict = {
-        "source": "github-social-adapter", "resource": ResourceType.COMMIT,
-        "sha": data.get("oid", ""), "author": author_name,
-        "date": author_date, "headline": headline,
+        "source": "github-social-adapter",
+        "resource": ResourceType.COMMIT,
+        "sha": data.get("oid", ""),
+        "author": author_name,
+        "date": author_date,
+        "headline": headline,
     }
     return "\n".join(parts).strip(), meta
 
@@ -740,9 +819,12 @@ def _render_commit(data: dict) -> tuple[str, dict]:
 # FETCH FUNCTIONS
 # ═══════════════════════════════════════════════════════════════════
 
+
 async def _fetch_issue(owner: str, repo: str, number: int) -> dict | None:
     # Tier 1: GraphQL
-    data = await _graphql(_ISSUE_QUERY, {"owner": owner, "repo": repo, "number": number})
+    data = await _graphql(
+        _ISSUE_QUERY, {"owner": owner, "repo": repo, "number": number}
+    )
     if data and data.get("repository", {}).get("issue"):
         return data["repository"]["issue"]
 
@@ -750,22 +832,37 @@ async def _fetch_issue(owner: str, repo: str, number: int) -> dict | None:
     logger.debug("GraphQL issue failed, trying REST for %s/%s#%d", owner, repo, number)
     issue = await _rest_get(f"/repos/{owner}/{repo}/issues/{number}")
     if issue:
-        comments = await _rest_get(f"/repos/{owner}/{repo}/issues/{number}/comments",
-                                   {"per_page": 100})
+        assert isinstance(issue, dict)
+        comments = await _rest_get(
+            f"/repos/{owner}/{repo}/issues/{number}/comments", {"per_page": 100}
+        )
         if not isinstance(comments, list):
             comments = []
         return {
-            "title": issue.get("title", ""), "body": issue.get("body", "") or "",
-            "state": issue.get("state", ""), "createdAt": issue.get("created_at", ""),
+            "title": issue.get("title", ""),
+            "body": issue.get("body", "") or "",
+            "state": issue.get("state", ""),
+            "createdAt": issue.get("created_at", ""),
             "author": {"login": issue.get("user", {}).get("login", "")},
-            "labels": [{"name": l["name"], "color": l.get("color", "")} for l in issue.get("labels", [])],
-            "comments": [{"body": c.get("body", "") or "", "createdAt": c.get("created_at", ""),
-                           "author": {"login": c.get("user", {}).get("login", "")}} for c in comments],
+            "labels": [
+                {"name": l["name"], "color": l.get("color", "")}
+                for l in issue.get("labels", [])
+            ],
+            "comments": [
+                {
+                    "body": c.get("body", "") or "",
+                    "createdAt": c.get("created_at", ""),
+                    "author": {"login": c.get("user", {}).get("login", "")},
+                }
+                for c in comments
+            ],
             "comment_count": len(comments),
         }
 
     # Tier 3: HTML scrape
-    logger.debug("REST issue failed, trying HTML scrape for %s/%s#%d", owner, repo, number)
+    logger.debug(
+        "REST issue failed, trying HTML scrape for %s/%s#%d", owner, repo, number
+    )
     scrape_url = f"https://github.com/{owner}/{repo}/issues/{number}"
     return await _html_scrape(scrape_url)
 
@@ -780,25 +877,49 @@ async def _fetch_pull(owner: str, repo: str, number: int) -> dict | None:
     logger.debug("GraphQL PR failed, trying REST for %s/%s#%d", owner, repo, number)
     pr = await _rest_get(f"/repos/{owner}/{repo}/pulls/{number}")
     if pr:
-        comments = await _rest_get(f"/repos/{owner}/{repo}/issues/{number}/comments", {"per_page": 100})
-        files = await _rest_get(f"/repos/{owner}/{repo}/pulls/{number}/files", {"per_page": 30})
+        assert isinstance(pr, dict)
+        comments = await _rest_get(
+            f"/repos/{owner}/{repo}/issues/{number}/comments", {"per_page": 100}
+        )
+        files = await _rest_get(
+            f"/repos/{owner}/{repo}/pulls/{number}/files", {"per_page": 30}
+        )
         return {
-            "title": pr.get("title", ""), "body": pr.get("body", "") or "",
-            "state": pr.get("state", ""), "createdAt": pr.get("created_at", ""),
-            "mergedAt": pr.get("merged_at", ""), "merged": pr.get("merged", False),
+            "title": pr.get("title", ""),
+            "body": pr.get("body", "") or "",
+            "state": pr.get("state", ""),
+            "createdAt": pr.get("created_at", ""),
+            "mergedAt": pr.get("merged_at", ""),
+            "merged": pr.get("merged", False),
             "author": {"login": pr.get("user", {}).get("login", "")},
             "baseRefName": pr.get("base", {}).get("ref", ""),
             "headRefName": pr.get("head", {}).get("ref", ""),
-            "additions": pr.get("additions", 0), "deletions": pr.get("deletions", 0),
+            "additions": pr.get("additions", 0),
+            "deletions": pr.get("deletions", 0),
             "changedFiles": pr.get("changed_files", 0),
             "mergeable": pr.get("mergeable_state", ""),
-            "labels": [{"name": l["name"], "color": l.get("color", "")} for l in pr.get("labels", [])],
-            "comments": [{"body": c.get("body", "") or "", "createdAt": c.get("created_at", ""),
-                           "author": {"login": c.get("user", {}).get("login", "")}} for c in (comments or [])],
+            "labels": [
+                {"name": l["name"], "color": l.get("color", "")}
+                for l in pr.get("labels", [])
+            ],
+            "comments": [
+                {
+                    "body": c.get("body", "") or "",
+                    "createdAt": c.get("created_at", ""),
+                    "author": {"login": c.get("user", {}).get("login", "")},
+                }
+                for c in (comments or [])
+            ],
             "review_comments": [],
-            "files": [{"filename": f.get("filename", ""), "status": f.get("status", ""),
-                        "additions": f.get("additions", 0), "deletions": f.get("deletions", 0)}
-                       for f in (files or [])[:20]],
+            "files": [
+                {
+                    "filename": f.get("filename", ""),
+                    "status": f.get("status", ""),
+                    "additions": f.get("additions", 0),
+                    "deletions": f.get("deletions", 0),
+                }
+                for f in (files or [])[:20]
+            ],
             "comment_count": len(comments or []),
         }
 
@@ -810,12 +931,19 @@ async def _fetch_pull(owner: str, repo: str, number: int) -> dict | None:
 
 async def _fetch_discussion(owner: str, repo: str, number: int) -> dict | None:
     # Tier 1: GraphQL (discussions have no REST API — fall through)
-    data = await _graphql(_DISCUSSION_QUERY, {"owner": owner, "repo": repo, "number": number})
+    data = await _graphql(
+        _DISCUSSION_QUERY, {"owner": owner, "repo": repo, "number": number}
+    )
     if data and data.get("repository", {}).get("discussion"):
         return data["repository"]["discussion"]
 
     # Tier 2: HTML scrape (no REST API for discussions)
-    logger.debug("GraphQL discussion failed, trying HTML scrape for %s/%s#%d", owner, repo, number)
+    logger.debug(
+        "GraphQL discussion failed, trying HTML scrape for %s/%s#%d",
+        owner,
+        repo,
+        number,
+    )
     scrape_url = f"https://github.com/{owner}/{repo}/discussions/{number}"
     return await _html_scrape(scrape_url)
 
@@ -827,57 +955,81 @@ async def _fetch_release(owner: str, repo: str, tag: str) -> dict | None:
         return data["repository"]["release"]
 
     # Tier 2: REST
-    logger.debug("GraphQL release failed, trying REST for %s/%s/tag/%s", owner, repo, tag)
+    logger.debug(
+        "GraphQL release failed, trying REST for %s/%s/tag/%s", owner, repo, tag
+    )
     release = await _rest_get(f"/repos/{owner}/{repo}/releases/tags/{tag}")
     if release:
-        assets = await _rest_get(f"/repos/{owner}/{repo}/releases/{release.get('id')}/assets")
+        assert isinstance(release, dict)
+        assets = await _rest_get(
+            f"/repos/{owner}/{repo}/releases/{release.get('id')}/assets"
+        )
         return {
-            "name": release.get("name", ""), "tagName": release.get("tag_name", ""),
+            "name": release.get("name", ""),
+            "tagName": release.get("tag_name", ""),
             "description": release.get("body", "") or "",
             "isPrerelease": release.get("prerelease", False),
             "isDraft": release.get("draft", False),
             "publishedAt": release.get("published_at", ""),
             "author": {"login": release.get("author", {}).get("login", "")},
-            "releaseAssets": {"nodes": [
-                {"name": a.get("name", ""), "downloadUrl": a.get("browser_download_url", ""),
-                 "size": a.get("size", 0), "contentType": a.get("content_type", "")}
-                for a in (assets or [])
-            ]},
+            "releaseAssets": {
+                "nodes": [
+                    {
+                        "name": a.get("name", ""),
+                        "downloadUrl": a.get("browser_download_url", ""),
+                        "size": a.get("size", 0),
+                        "contentType": a.get("content_type", ""),
+                    }
+                    for a in (assets or [])
+                ]
+            },
         }
 
     # Tier 3: HTML scrape
-    logger.debug("REST release failed, trying HTML scrape for %s/%s/tag/%s", owner, repo, tag)
+    logger.debug(
+        "REST release failed, trying HTML scrape for %s/%s/tag/%s", owner, repo, tag
+    )
     scrape_url = f"https://github.com/{owner}/{repo}/releases/tag/{tag}"
     return await _html_scrape(scrape_url)
 
 
 async def _fetch_release_list(owner: str, repo: str) -> dict | None:
     # Tier 1: GraphQL
-    data = await _graphql(_RELEASES_LIST_QUERY, {"owner": owner, "repo": repo, "first": 30})
+    data = await _graphql(
+        _RELEASES_LIST_QUERY, {"owner": owner, "repo": repo, "first": 30}
+    )
     if data and data.get("repository", {}).get("releases"):
         return data["repository"]
 
     # Tier 2: REST
-    logger.debug("GraphQL release list failed, trying REST for %s/%s/releases", owner, repo)
+    logger.debug(
+        "GraphQL release list failed, trying REST for %s/%s/releases", owner, repo
+    )
     releases = await _rest_get(f"/repos/{owner}/{repo}/releases", {"per_page": 30})
     if isinstance(releases, list) and releases:
         return {
             "releases": {
                 "totalCount": len(releases),
-                "nodes": [{
-                    "name": r.get("name", ""), "tagName": r.get("tag_name", ""),
-                    "description": r.get("body", "") or "",
-                    "isPrerelease": r.get("prerelease", False),
-                    "isDraft": r.get("draft", False),
-                    "publishedAt": r.get("published_at", ""),
-                    "url": r.get("html_url", ""),
-                    "author": {"login": r.get("author", {}).get("login", "")},
-                } for r in releases],
+                "nodes": [
+                    {
+                        "name": r.get("name", ""),
+                        "tagName": r.get("tag_name", ""),
+                        "description": r.get("body", "") or "",
+                        "isPrerelease": r.get("prerelease", False),
+                        "isDraft": r.get("draft", False),
+                        "publishedAt": r.get("published_at", ""),
+                        "url": r.get("html_url", ""),
+                        "author": {"login": r.get("author", {}).get("login", "")},
+                    }
+                    for r in releases
+                ],
             }
         }
 
     # Tier 3: HTML scrape
-    logger.debug("REST release list failed, trying HTML scrape for %s/%s/releases", owner, repo)
+    logger.debug(
+        "REST release list failed, trying HTML scrape for %s/%s/releases", owner, repo
+    )
     scrape_url = f"https://github.com/{owner}/{repo}/releases"
     return await _html_scrape(scrape_url)
 
@@ -892,6 +1044,7 @@ async def _fetch_commit(owner: str, repo: str, sha: str) -> dict | None:
     logger.debug("GraphQL commit failed, trying REST for %s/%s/%s", owner, repo, sha)
     commit = await _rest_get(f"/repos/{owner}/{repo}/commits/{sha}")
     if commit:
+        assert isinstance(commit, dict)
         author_info = commit.get("commit", {}).get("author", {}) or {}
         committer_info = commit.get("commit", {}).get("committer", {}) or {}
         message = commit.get("commit", {}).get("message", "")
@@ -901,19 +1054,27 @@ async def _fetch_commit(owner: str, repo: str, sha: str) -> dict | None:
             "oid": sha,
             "messageHeadline": headline,
             "message": message,
-            "author": {"name": author_info.get("name", ""),
-                        "date": author_info.get("date", ""),
-                        "user": {"login": commit.get("author", {}).get("login", "")}},
-            "committer": {"name": committer_info.get("name", ""),
-                           "date": committer_info.get("date", ""),
-                           "user": {"login": commit.get("committer", {}).get("login", "")}},
+            "author": {
+                "name": author_info.get("name", ""),
+                "date": author_info.get("date", ""),
+                "user": {"login": commit.get("author", {}).get("login", "")},
+            },
+            "committer": {
+                "name": committer_info.get("name", ""),
+                "date": committer_info.get("date", ""),
+                "user": {"login": commit.get("committer", {}).get("login", "")},
+            },
             "url": f"https://github.com/{owner}/{repo}/commit/{sha}",
             "associatedPullRequests": {"nodes": []},
-            "parents": {"nodes": [{"oid": p["sha"]} for p in commit.get("parents", [])[:2]]},
+            "parents": {
+                "nodes": [{"oid": p["sha"]} for p in commit.get("parents", [])[:2]]
+            },
         }
 
     # Tier 3: HTML scrape
-    logger.debug("REST commit failed, trying HTML scrape for %s/%s/%s", owner, repo, sha)
+    logger.debug(
+        "REST commit failed, trying HTML scrape for %s/%s/%s", owner, repo, sha
+    )
     scrape_url = f"https://github.com/{owner}/{repo}/commit/{sha}"
     return await _html_scrape(scrape_url)
 
@@ -921,6 +1082,7 @@ async def _fetch_commit(owner: str, repo: str, sha: str) -> dict | None:
 # ═══════════════════════════════════════════════════════════════════
 # ADAPTER
 # ═══════════════════════════════════════════════════════════════════
+
 
 @adapter
 class GitHubSocialAdapter(SiteAdapter):
@@ -938,12 +1100,18 @@ class GitHubSocialAdapter(SiteAdapter):
     name = "github-social"
 
     patterns = [
-        re.compile(r"^https?://(?:www\.)?github\.com/"
-                   r"[^/]+/[^/]+/(?:issues|pull|discussions)/\d+"),
-        re.compile(r"^https?://(?:www\.)?github\.com/"
-                   r"[^/]+/[^/]+/releases(?:/tag/.+|/latest)?$"),
-        re.compile(r"^https?://(?:www\.)?github\.com/"
-                   r"[^/]+/[^/]+/commit/[a-fA-F0-9]{6,40}"),
+        re.compile(
+            r"^https?://(?:www\.)?github\.com/"
+            r"[^/]+/[^/]+/(?:issues|pull|discussions)/\d+"
+        ),
+        re.compile(
+            r"^https?://(?:www\.)?github\.com/"
+            r"[^/]+/[^/]+/releases(?:/tag/.+|/latest)?$"
+        ),
+        re.compile(
+            r"^https?://(?:www\.)?github\.com/"
+            r"[^/]+/[^/]+/commit/[a-fA-F0-9]{6,40}"
+        ),
     ]
 
     # Below the file adapter (200) so file URLs are tried first
@@ -965,7 +1133,9 @@ class GitHubSocialAdapter(SiteAdapter):
             elif resource_type == ResourceType.PULL:
                 return await self._handle_pull(url, owner, repo, int(parts["number"]))
             elif resource_type == ResourceType.DISCUSSION:
-                return await self._handle_discussion(url, owner, repo, int(parts["number"]))
+                return await self._handle_discussion(
+                    url, owner, repo, int(parts["number"])
+                )
             elif resource_type == ResourceType.RELEASE:
                 return await self._handle_release(url, owner, repo, parts["tag"])
             elif resource_type == ResourceType.RELEASE_LIST:
@@ -980,7 +1150,9 @@ class GitHubSocialAdapter(SiteAdapter):
 
         raise AdapterError(f"Unknown GitHub resource type: {url}")
 
-    async def _handle_issue(self, url: str, owner: str, repo: str, number: int) -> AdapterResult:
+    async def _handle_issue(
+        self, url: str, owner: str, repo: str, number: int
+    ) -> AdapterResult:
         data = await _fetch_issue(owner, repo, number)
         if not data:
             raise AdapterError(
@@ -988,10 +1160,17 @@ class GitHubSocialAdapter(SiteAdapter):
                 f"Set GITHUB_TOKEN env var with `public_repo` scope for GraphQL access."
             )
         markdown, metadata = _render_issue(data)
-        return AdapterResult(success=True, markdown=markdown, metadata=metadata,
-                             source="github-social-adapter", url=url)
+        return AdapterResult(
+            success=True,
+            markdown=markdown,
+            metadata=metadata,
+            source="github-social-adapter",
+            url=url,
+        )
 
-    async def _handle_pull(self, url: str, owner: str, repo: str, number: int) -> AdapterResult:
+    async def _handle_pull(
+        self, url: str, owner: str, repo: str, number: int
+    ) -> AdapterResult:
         data = await _fetch_pull(owner, repo, number)
         if not data:
             raise AdapterError(
@@ -999,10 +1178,17 @@ class GitHubSocialAdapter(SiteAdapter):
                 f"Set GITHUB_TOKEN env var with `public_repo` scope for GraphQL access."
             )
         markdown, metadata = _render_pull(data)
-        return AdapterResult(success=True, markdown=markdown, metadata=metadata,
-                             source="github-social-adapter", url=url)
+        return AdapterResult(
+            success=True,
+            markdown=markdown,
+            metadata=metadata,
+            source="github-social-adapter",
+            url=url,
+        )
 
-    async def _handle_discussion(self, url: str, owner: str, repo: str, number: int) -> AdapterResult:
+    async def _handle_discussion(
+        self, url: str, owner: str, repo: str, number: int
+    ) -> AdapterResult:
         data = await _fetch_discussion(owner, repo, number)
         if not data:
             raise AdapterError(
@@ -1010,10 +1196,17 @@ class GitHubSocialAdapter(SiteAdapter):
                 f"Set GITHUB_TOKEN env var with `public_repo` scope for GraphQL access."
             )
         markdown, metadata = _render_discussion(data)
-        return AdapterResult(success=True, markdown=markdown, metadata=metadata,
-                             source="github-social-adapter", url=url)
+        return AdapterResult(
+            success=True,
+            markdown=markdown,
+            metadata=metadata,
+            source="github-social-adapter",
+            url=url,
+        )
 
-    async def _handle_release(self, url: str, owner: str, repo: str, tag: str) -> AdapterResult:
+    async def _handle_release(
+        self, url: str, owner: str, repo: str, tag: str
+    ) -> AdapterResult:
         data = await _fetch_release(owner, repo, tag)
         if not data:
             raise AdapterError(
@@ -1021,10 +1214,17 @@ class GitHubSocialAdapter(SiteAdapter):
                 f"Set GITHUB_TOKEN env var with `public_repo` scope for GraphQL access."
             )
         markdown, metadata = _render_release(data)
-        return AdapterResult(success=True, markdown=markdown, metadata=metadata,
-                             source="github-social-adapter", url=url)
+        return AdapterResult(
+            success=True,
+            markdown=markdown,
+            metadata=metadata,
+            source="github-social-adapter",
+            url=url,
+        )
 
-    async def _handle_release_list(self, url: str, owner: str, repo: str) -> AdapterResult:
+    async def _handle_release_list(
+        self, url: str, owner: str, repo: str
+    ) -> AdapterResult:
         data = await _fetch_release_list(owner, repo)
         if not data:
             raise AdapterError(
@@ -1032,10 +1232,17 @@ class GitHubSocialAdapter(SiteAdapter):
                 f"Set GITHUB_TOKEN env var with `public_repo` scope for GraphQL access."
             )
         markdown, metadata = _render_release_list(data)
-        return AdapterResult(success=True, markdown=markdown, metadata=metadata,
-                             source="github-social-adapter", url=url)
+        return AdapterResult(
+            success=True,
+            markdown=markdown,
+            metadata=metadata,
+            source="github-social-adapter",
+            url=url,
+        )
 
-    async def _handle_commit(self, url: str, owner: str, repo: str, sha: str) -> AdapterResult:
+    async def _handle_commit(
+        self, url: str, owner: str, repo: str, sha: str
+    ) -> AdapterResult:
         data = await _fetch_commit(owner, repo, sha)
         if not data:
             raise AdapterError(
@@ -1043,5 +1250,10 @@ class GitHubSocialAdapter(SiteAdapter):
                 f"Set GITHUB_TOKEN env var with `public_repo` scope for GraphQL access."
             )
         markdown, metadata = _render_commit(data)
-        return AdapterResult(success=True, markdown=markdown, metadata=metadata,
-                             source="github-social-adapter", url=url)
+        return AdapterResult(
+            success=True,
+            markdown=markdown,
+            metadata=metadata,
+            source="github-social-adapter",
+            url=url,
+        )

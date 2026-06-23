@@ -1,1 +1,3195 @@
-{"openapi":"3.1.0","info":{"title":"GroktoCrawl","description":"Self-hosted, Firecrawl-compatible web scraping and AI research API. MIT licensed.","contact":{"name":"GroktoCrawl","url":"https://github.com/groktopus/groktocrawl"},"license":{"name":"MIT","url":"https://github.com/groktopus/groktocrawl/blob/main/LICENSE"},"version":"0.1.1"},"servers":[{"url":"http://localhost:8080","description":"Local development"}],"paths":{"/health":{"get":{"summary":"Health","operationId":"health_health_get","responses":{"200":{"description":"Successful Response","content":{"application/json":{"schema":{}}}}}}},"/v2/scrape":{"post":{"summary":"Scrape","operationId":"scrape_v2_scrape_post","requestBody":{"content":{"application/json":{"schema":{"$ref":"#/components/schemas/ScrapeRequest"}}},"required":true},"responses":{"200":{"description":"Successful Response","content":{"application/json":{"schema":{"$ref":"#/components/schemas/ScrapeResponse"}}}},"422":{"description":"Validation Error","content":{"application/json":{"schema":{"$ref":"#/components/schemas/HTTPValidationError"}}}}}}},"/v2/agent":{"post":{"summary":"Create Agent","operationId":"create_agent_v2_agent_post","requestBody":{"content":{"application/json":{"schema":{"$ref":"#/components/schemas/AgentRequest"}}},"required":true},"responses":{"200":{"description":"Successful Response","content":{"application/json":{"schema":{"$ref":"#/components/schemas/AgentCreateResponse"}}}},"422":{"description":"Validation Error","content":{"application/json":{"schema":{"$ref":"#/components/schemas/HTTPValidationError"}}}}}}},"/v2/agent/{job_id}":{"get":{"summary":"Get Agent Status","operationId":"get_agent_status_v2_agent__job_id__get","parameters":[{"name":"job_id","in":"path","required":true,"schema":{"type":"string","title":"Job Id"}}],"responses":{"200":{"description":"Successful Response","content":{"application/json":{"schema":{"$ref":"#/components/schemas/AgentStatusResponse"}}}},"422":{"description":"Validation Error","content":{"application/json":{"schema":{"$ref":"#/components/schemas/HTTPValidationError"}}}}}},"delete":{"summary":"Cancel Agent","operationId":"cancel_agent_v2_agent__job_id__delete","parameters":[{"name":"job_id","in":"path","required":true,"schema":{"type":"string","title":"Job Id"}}],"responses":{"200":{"description":"Successful Response","content":{"application/json":{"schema":{"$ref":"#/components/schemas/AgentCancelResponse"}}}},"422":{"description":"Validation Error","content":{"application/json":{"schema":{"$ref":"#/components/schemas/HTTPValidationError"}}}}}}},"/v2/crawl":{"post":{"summary":"Create Crawl","operationId":"create_crawl_v2_crawl_post","requestBody":{"content":{"application/json":{"schema":{"$ref":"#/components/schemas/CrawlRequest"}}},"required":true},"responses":{"200":{"description":"Successful Response","content":{"application/json":{"schema":{"$ref":"#/components/schemas/CrawlCreateResponse"}}}},"422":{"description":"Validation Error","content":{"application/json":{"schema":{"$ref":"#/components/schemas/HTTPValidationError"}}}}}}},"/v2/crawl/{job_id}":{"get":{"summary":"Get Crawl Status","operationId":"get_crawl_status_v2_crawl__job_id__get","parameters":[{"name":"job_id","in":"path","required":true,"schema":{"type":"string","title":"Job Id"}}],"responses":{"200":{"description":"Successful Response","content":{"application/json":{"schema":{"$ref":"#/components/schemas/CrawlStatusResponse"}}}},"422":{"description":"Validation Error","content":{"application/json":{"schema":{"$ref":"#/components/schemas/HTTPValidationError"}}}}}},"delete":{"summary":"Cancel Crawl","operationId":"cancel_crawl_v2_crawl__job_id__delete","parameters":[{"name":"job_id","in":"path","required":true,"schema":{"type":"string","title":"Job Id"}}],"responses":{"200":{"description":"Successful Response","content":{"application/json":{"schema":{"$ref":"#/components/schemas/AgentCancelResponse"}}}},"422":{"description":"Validation Error","content":{"application/json":{"schema":{"$ref":"#/components/schemas/HTTPValidationError"}}}}}}},"/v2/batch/scrape":{"post":{"summary":"Create Batch Scrape","operationId":"create_batch_scrape_v2_batch_scrape_post","requestBody":{"content":{"application/json":{"schema":{"$ref":"#/components/schemas/BatchScrapeRequest"}}},"required":true},"responses":{"200":{"description":"Successful Response","content":{"application/json":{"schema":{"$ref":"#/components/schemas/CrawlCreateResponse"}}}},"422":{"description":"Validation Error","content":{"application/json":{"schema":{"$ref":"#/components/schemas/HTTPValidationError"}}}}}}},"/v2/search":{"post":{"summary":"Search","operationId":"search_v2_search_post","requestBody":{"content":{"application/json":{"schema":{"$ref":"#/components/schemas/SearchRequest"}}},"required":true},"responses":{"200":{"description":"Successful Response","content":{"application/json":{"schema":{"$ref":"#/components/schemas/SearchResponse"}}}},"422":{"description":"Validation Error","content":{"application/json":{"schema":{"$ref":"#/components/schemas/HTTPValidationError"}}}}}}},"/v2/extract":{"post":{"summary":"Create Extract","description":"Extract structured data from provided URLs.","operationId":"create_extract_v2_extract_post","requestBody":{"content":{"application/json":{"schema":{"$ref":"#/components/schemas/ExtractRequest"}}},"required":true},"responses":{"200":{"description":"Successful Response","content":{"application/json":{"schema":{"$ref":"#/components/schemas/ExtractCreateResponse"}}}},"422":{"description":"Validation Error","content":{"application/json":{"schema":{"$ref":"#/components/schemas/HTTPValidationError"}}}}}}},"/v2/extract/{job_id}":{"get":{"summary":"Get Extract Status","description":"Get extract job status and results.","operationId":"get_extract_status_v2_extract__job_id__get","parameters":[{"name":"job_id","in":"path","required":true,"schema":{"type":"string","title":"Job Id"}}],"responses":{"200":{"description":"Successful Response","content":{"application/json":{"schema":{"$ref":"#/components/schemas/ExtractStatusResponse"}}}},"422":{"description":"Validation Error","content":{"application/json":{"schema":{"$ref":"#/components/schemas/HTTPValidationError"}}}}}}},"/v2/map":{"post":{"summary":"Map Site","operationId":"map_site_v2_map_post","requestBody":{"content":{"application/json":{"schema":{"$ref":"#/components/schemas/MapRequest"}}},"required":true},"responses":{"200":{"description":"Successful Response","content":{"application/json":{"schema":{"$ref":"#/components/schemas/MapResponse"}}}},"422":{"description":"Validation Error","content":{"application/json":{"schema":{"$ref":"#/components/schemas/HTTPValidationError"}}}}}}},"/v2/browser":{"get":{"summary":"List Browsers","operationId":"list_browsers_v2_browser_get","responses":{"200":{"description":"Successful Response","content":{"application/json":{"schema":{"$ref":"#/components/schemas/BrowserListResponse"}}}}}},"post":{"summary":"Create Browser","operationId":"create_browser_v2_browser_post","requestBody":{"content":{"application/json":{"schema":{"$ref":"#/components/schemas/BrowserCreateRequest"}}},"required":true},"responses":{"200":{"description":"Successful Response","content":{"application/json":{"schema":{"$ref":"#/components/schemas/BrowserCreateResponse"}}}},"422":{"description":"Validation Error","content":{"application/json":{"schema":{"$ref":"#/components/schemas/HTTPValidationError"}}}}}}},"/v2/browser/{session_id}/execute":{"post":{"summary":"Execute Browser","operationId":"execute_browser_v2_browser__session_id__execute_post","parameters":[{"name":"session_id","in":"path","required":true,"schema":{"type":"string","title":"Session Id"}}],"requestBody":{"required":true,"content":{"application/json":{"schema":{"$ref":"#/components/schemas/BrowserExecuteRequest"}}}},"responses":{"200":{"description":"Successful Response","content":{"application/json":{"schema":{"$ref":"#/components/schemas/BrowserExecuteResponse"}}}},"422":{"description":"Validation Error","content":{"application/json":{"schema":{"$ref":"#/components/schemas/HTTPValidationError"}}}}}}},"/v2/browser/{session_id}":{"delete":{"summary":"Destroy Browser","operationId":"destroy_browser_v2_browser__session_id__delete","parameters":[{"name":"session_id","in":"path","required":true,"schema":{"type":"string","title":"Session Id"}}],"responses":{"200":{"description":"Successful Response","content":{"application/json":{"schema":{"$ref":"#/components/schemas/BrowserDeleteResponse"}}}},"422":{"description":"Validation Error","content":{"application/json":{"schema":{"$ref":"#/components/schemas/HTTPValidationError"}}}}}}},"/v2/monitor":{"get":{"summary":"List Monitors","operationId":"list_monitors_v2_monitor_get","responses":{"200":{"description":"Successful Response","content":{"application/json":{"schema":{"$ref":"#/components/schemas/MonitorListResponse"}}}}}},"post":{"summary":"Create Monitor","operationId":"create_monitor_v2_monitor_post","requestBody":{"content":{"application/json":{"schema":{"$ref":"#/components/schemas/MonitorCreateRequest"}}},"required":true},"responses":{"200":{"description":"Successful Response","content":{"application/json":{"schema":{"$ref":"#/components/schemas/MonitorResponse"}}}},"422":{"description":"Validation Error","content":{"application/json":{"schema":{"$ref":"#/components/schemas/HTTPValidationError"}}}}}}},"/v2/monitor/{monitor_id}":{"get":{"summary":"Get Monitor Status","operationId":"get_monitor_status_v2_monitor__monitor_id__get","parameters":[{"name":"monitor_id","in":"path","required":true,"schema":{"type":"string","title":"Monitor Id"}}],"responses":{"200":{"description":"Successful Response","content":{"application/json":{"schema":{"$ref":"#/components/schemas/MonitorResponse"}}}},"422":{"description":"Validation Error","content":{"application/json":{"schema":{"$ref":"#/components/schemas/HTTPValidationError"}}}}}},"patch":{"summary":"Update Monitor","operationId":"update_monitor_v2_monitor__monitor_id__patch","parameters":[{"name":"monitor_id","in":"path","required":true,"schema":{"type":"string","title":"Monitor Id"}}],"requestBody":{"required":true,"content":{"application/json":{"schema":{"$ref":"#/components/schemas/MonitorUpdateRequest"}}}},"responses":{"200":{"description":"Successful Response","content":{"application/json":{"schema":{"$ref":"#/components/schemas/MonitorResponse"}}}},"422":{"description":"Validation Error","content":{"application/json":{"schema":{"$ref":"#/components/schemas/HTTPValidationError"}}}}}},"delete":{"summary":"Delete Monitor Route","operationId":"delete_monitor_route_v2_monitor__monitor_id__delete","parameters":[{"name":"monitor_id","in":"path","required":true,"schema":{"type":"string","title":"Monitor Id"}}],"responses":{"200":{"description":"Successful Response","content":{"application/json":{"schema":{"$ref":"#/components/schemas/MonitorDeleteResponse"}}}},"422":{"description":"Validation Error","content":{"application/json":{"schema":{"$ref":"#/components/schemas/HTTPValidationError"}}}}}}},"/v2/parse":{"post":{"summary":"Parse File","description":"Upload a file and get its content as markdown.","operationId":"parse_file_v2_parse_post","responses":{"200":{"description":"Successful Response","content":{"application/json":{"schema":{"$ref":"#/components/schemas/ParseResponse"}}}}}}},"/v2/generate-llmstxt":{"post":{"summary":"Create Llmstxt","description":"Generate an llms.txt file for a website.","operationId":"create_llmstxt_v2_generate_llmstxt_post","requestBody":{"content":{"application/json":{"schema":{"$ref":"#/components/schemas/LLMsTextRequest"}}},"required":true},"responses":{"200":{"description":"Successful Response","content":{"application/json":{"schema":{"$ref":"#/components/schemas/LLMsTextCreateResponse"}}}},"422":{"description":"Validation Error","content":{"application/json":{"schema":{"$ref":"#/components/schemas/HTTPValidationError"}}}}}}},"/v2/generate-llmstxt/{job_id}":{"get":{"summary":"Get Llmstxt Status","description":"Get llms.txt generation job status and results.","operationId":"get_llmstxt_status_v2_generate_llmstxt__job_id__get","parameters":[{"name":"job_id","in":"path","required":true,"schema":{"type":"string","title":"Job Id"}}],"responses":{"200":{"description":"Successful Response","content":{"application/json":{"schema":{"$ref":"#/components/schemas/LLMsTextStatusResponse"}}}},"422":{"description":"Validation Error","content":{"application/json":{"schema":{"$ref":"#/components/schemas/HTTPValidationError"}}}}}}}},"components":{"schemas":{"AgentCancelResponse":{"properties":{"success":{"type":"boolean","title":"Success","default":true}},"type":"object","title":"AgentCancelResponse"},"AgentCreateResponse":{"properties":{"success":{"type":"boolean","title":"Success","default":true},"id":{"type":"string","title":"Id"}},"type":"object","required":["id"],"title":"AgentCreateResponse"},"AgentRequest":{"properties":{"prompt":{"type":"string","maxLength":10000,"title":"Prompt","description":"What the agent should research"},"urls":{"anyOf":[{"items":{"type":"string"},"type":"array"},{"type":"null"}],"title":"Urls","description":"Optional seed URLs to constrain research"},"schema":{"anyOf":[{"additionalProperties":true,"type":"object"},{"type":"null"}],"title":"Schema","description":"JSON Schema for structured output"},"model":{"type":"string","title":"Model","description":"Model hint","default":"default"},"max_credits":{"anyOf":[{"type":"integer"},{"type":"null"}],"title":"Max Credits"},"webhook":{"anyOf":[{"additionalProperties":true,"type":"object"},{"type":"null"}],"title":"Webhook"},"strict_constrain_to_urls":{"type":"boolean","title":"Strict Constrain To Urls","default":false}},"type":"object","required":["prompt"],"title":"AgentRequest"},"AgentStatusResponse":{"properties":{"success":{"type":"boolean","title":"Success","default":true},"status":{"type":"string","title":"Status","default":"processing"},"data":{"anyOf":[{"additionalProperties":true,"type":"object"},{"type":"null"}],"title":"Data"},"error":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Error"},"expires_at":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Expires At"},"credits_used":{"anyOf":[{"type":"integer"},{"type":"null"}],"title":"Credits Used"}},"type":"object","title":"AgentStatusResponse"},"BatchScrapeRequest":{"properties":{"urls":{"items":{"type":"string"},"type":"array","title":"Urls"},"max_concurrency":{"type":"integer","title":"Max Concurrency","default":3},"webhook":{"anyOf":[{"additionalProperties":true,"type":"object"},{"type":"null"}],"title":"Webhook"}},"type":"object","required":["urls"],"title":"BatchScrapeRequest"},"BrowserCreateRequest":{"properties":{"ttl":{"type":"integer","maximum":3600.0,"minimum":30.0,"title":"Ttl","description":"Session TTL in seconds","default":300}},"type":"object","title":"BrowserCreateRequest"},"BrowserCreateResponse":{"properties":{"success":{"type":"boolean","title":"Success","default":true},"id":{"type":"string","title":"Id"}},"type":"object","required":["id"],"title":"BrowserCreateResponse"},"BrowserDeleteResponse":{"properties":{"success":{"type":"boolean","title":"Success","default":true},"id":{"type":"string","title":"Id"}},"type":"object","required":["id"],"title":"BrowserDeleteResponse"},"BrowserExecuteRequest":{"properties":{"action":{"type":"string","title":"Action","description":"Action: navigate, click, type, screenshot, scroll, wait, getContent, executeScript"},"url":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Url"},"selector":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Selector"},"text":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Text"},"script":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Script"},"timeout":{"type":"integer","title":"Timeout","default":10000}},"type":"object","required":["action"],"title":"BrowserExecuteRequest"},"BrowserExecuteResponse":{"properties":{"success":{"type":"boolean","title":"Success","default":true},"result":{"title":"Result"},"error":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Error"}},"type":"object","title":"BrowserExecuteResponse"},"BrowserListResponse":{"properties":{"success":{"type":"boolean","title":"Success","default":true},"sessions":{"items":{"additionalProperties":true,"type":"object"},"type":"array","title":"Sessions"}},"type":"object","title":"BrowserListResponse"},"CrawlCreateResponse":{"properties":{"success":{"type":"boolean","title":"Success","default":true},"id":{"type":"string","title":"Id"}},"type":"object","required":["id"],"title":"CrawlCreateResponse"},"CrawlRequest":{"properties":{"url":{"type":"string","title":"Url"},"max_pages":{"type":"integer","title":"Max Pages","default":10},"max_depth":{"type":"integer","title":"Max Depth","default":2},"ignore_sitemap":{"type":"boolean","title":"Ignore Sitemap","default":false},"include_paths":{"anyOf":[{"items":{"type":"string"},"type":"array"},{"type":"null"}],"title":"Include Paths"},"exclude_paths":{"anyOf":[{"items":{"type":"string"},"type":"array"},{"type":"null"}],"title":"Exclude Paths"},"webhook":{"anyOf":[{"additionalProperties":true,"type":"object"},{"type":"null"}],"title":"Webhook"}},"type":"object","required":["url"],"title":"CrawlRequest"},"CrawlStatusResponse":{"properties":{"success":{"type":"boolean","title":"Success","default":true},"status":{"type":"string","title":"Status","default":"processing"},"completed":{"type":"integer","title":"Completed","default":0},"total":{"type":"integer","title":"Total","default":0},"credits_used":{"anyOf":[{"type":"integer"},{"type":"null"}],"title":"Credits Used"},"data":{"anyOf":[{"items":{"additionalProperties":true,"type":"object"},"type":"array"},{"type":"null"}],"title":"Data"},"error":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Error"}},"type":"object","title":"CrawlStatusResponse"},"ExtractCreateResponse":{"properties":{"success":{"type":"boolean","title":"Success","default":true},"id":{"type":"string","title":"Id"}},"type":"object","required":["id"],"title":"ExtractCreateResponse"},"ExtractRequest":{"properties":{"urls":{"items":{"type":"string"},"type":"array","minItems":1,"title":"Urls","description":"URLs to extract data from"},"prompt":{"anyOf":[{"type":"string","maxLength":10000},{"type":"null"}],"title":"Prompt","description":"Optional instruction for extraction"},"schema":{"anyOf":[{"additionalProperties":true,"type":"object"},{"type":"null"}],"title":"Schema","description":"JSON Schema for structured output"},"model":{"type":"string","title":"Model","description":"Model hint","default":"default"},"webhook":{"anyOf":[{"additionalProperties":true,"type":"object"},{"type":"null"}],"title":"Webhook"}},"type":"object","required":["urls"],"title":"ExtractRequest"},"ExtractStatusResponse":{"properties":{"success":{"type":"boolean","title":"Success","default":true},"status":{"type":"string","title":"Status","default":"processing"},"data":{"anyOf":[{"additionalProperties":true,"type":"object"},{"type":"null"}],"title":"Data"},"error":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Error"},"expires_at":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Expires At"}},"type":"object","title":"ExtractStatusResponse"},"HTTPValidationError":{"properties":{"detail":{"items":{"$ref":"#/components/schemas/ValidationError"},"type":"array","title":"Detail"}},"type":"object","title":"HTTPValidationError"},"LLMsTextCreateResponse":{"properties":{"success":{"type":"boolean","title":"Success","default":true},"id":{"type":"string","title":"Id"}},"type":"object","required":["id"],"title":"LLMsTextCreateResponse"},"LLMsTextRequest":{"properties":{"url":{"type":"string","title":"Url","description":"Site URL to generate llms.txt for"},"max_pages":{"type":"integer","maximum":500.0,"minimum":1.0,"title":"Max Pages","description":"Max pages to scan","default":50},"webhook":{"anyOf":[{"additionalProperties":true,"type":"object"},{"type":"null"}],"title":"Webhook"}},"type":"object","required":["url"],"title":"LLMsTextRequest"},"LLMsTextStatusResponse":{"properties":{"success":{"type":"boolean","title":"Success","default":true},"status":{"type":"string","title":"Status","default":"processing"},"data":{"anyOf":[{"additionalProperties":true,"type":"object"},{"type":"null"}],"title":"Data"},"error":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Error"},"expires_at":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Expires At"}},"type":"object","title":"LLMsTextStatusResponse"},"MapRequest":{"properties":{"url":{"type":"string","title":"Url"},"limit":{"type":"integer","title":"Limit","default":100},"search":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Search"}},"type":"object","required":["url"],"title":"MapRequest"},"MapResponse":{"properties":{"success":{"type":"boolean","title":"Success","default":true},"links":{"items":{"type":"string"},"type":"array","title":"Links"}},"type":"object","title":"MapResponse"},"MonitorCreateRequest":{"properties":{"url":{"type":"string","title":"Url","description":"URL to monitor for changes"},"schedule":{"type":"string","title":"Schedule","description":"Cron expression for check frequency","default":"0 */6 * * *"},"webhook":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Webhook","description":"Webhook URL called on change"}},"type":"object","required":["url"],"title":"MonitorCreateRequest"},"MonitorDeleteResponse":{"properties":{"success":{"type":"boolean","title":"Success","default":true}},"type":"object","title":"MonitorDeleteResponse"},"MonitorListResponse":{"properties":{"success":{"type":"boolean","title":"Success","default":true},"monitors":{"items":{"$ref":"#/components/schemas/MonitorResponse"},"type":"array","title":"Monitors"}},"type":"object","title":"MonitorListResponse"},"MonitorResponse":{"properties":{"success":{"type":"boolean","title":"Success","default":true},"id":{"type":"string","title":"Id"},"url":{"type":"string","title":"Url"},"schedule":{"type":"string","title":"Schedule"},"webhook":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Webhook"},"last_checked":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Last Checked"},"last_result":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Last Result"},"created_at":{"type":"string","title":"Created At"}},"type":"object","required":["id","url","schedule","created_at"],"title":"MonitorResponse"},"MonitorUpdateRequest":{"properties":{"url":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Url"},"schedule":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Schedule"},"webhook":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Webhook"}},"type":"object","title":"MonitorUpdateRequest"},"ParseResponse":{"properties":{"success":{"type":"boolean","title":"Success"},"data":{"anyOf":[{"additionalProperties":true,"type":"object"},{"type":"null"}],"title":"Data"},"error":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Error"}},"type":"object","required":["success"],"title":"ParseResponse"},"ScrapeData":{"properties":{"markdown":{"type":"string","title":"Markdown","default":""},"metadata":{"additionalProperties":true,"type":"object","title":"Metadata"}},"type":"object","title":"ScrapeData"},"ScrapeRequest":{"properties":{"url":{"type":"string","title":"Url"},"formats":{"items":{"type":"string"},"type":"array","title":"Formats","default":["markdown"]},"only_main_content":{"type":"boolean","title":"Only Main Content","default":true},"timeout":{"type":"integer","title":"Timeout","default":30000}},"type":"object","required":["url"],"title":"ScrapeRequest"},"ScrapeResponse":{"properties":{"success":{"type":"boolean","title":"Success"},"data":{"anyOf":[{"$ref":"#/components/schemas/ScrapeData"},{"type":"null"}]},"error":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Error"}},"type":"object","required":["success"],"title":"ScrapeResponse"},"SearchRequest":{"properties":{"query":{"type":"string","title":"Query"},"limit":{"type":"integer","title":"Limit","default":5}},"type":"object","required":["query"],"title":"SearchRequest"},"SearchResponse":{"properties":{"success":{"type":"boolean","title":"Success","default":true},"data":{"items":{"$ref":"#/components/schemas/SearchResult"},"type":"array","title":"Data"}},"type":"object","title":"SearchResponse"},"SearchResult":{"properties":{"url":{"type":"string","title":"Url"},"title":{"type":"string","title":"Title"},"description":{"type":"string","title":"Description","default":""},"markdown":{"type":"string","title":"Markdown","default":""}},"type":"object","required":["url","title"],"title":"SearchResult"},"ValidationError":{"properties":{"loc":{"items":{"anyOf":[{"type":"string"},{"type":"integer"}]},"type":"array","title":"Location"},"msg":{"type":"string","title":"Message"},"type":{"type":"string","title":"Error Type"},"input":{"title":"Input"},"ctx":{"type":"object","title":"Context"}},"type":"object","required":["loc","msg","type"],"title":"ValidationError"}}}}
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "GroktoCrawl",
+    "description": "Self-hosted, Firecrawl-compatible web scraping and AI research API. MIT licensed.",
+    "contact": {
+      "name": "GroktoCrawl",
+      "url": "https://github.com/groktopus/groktocrawl"
+    },
+    "license": {
+      "name": "MIT",
+      "url": "https://github.com/groktopus/groktocrawl/blob/main/LICENSE"
+    },
+    "version": "0.1.1"
+  },
+  "servers": [
+    {
+      "url": "http://localhost:8080",
+      "description": "Local development"
+    }
+  ],
+  "paths": {
+    "/health": {
+      "get": {
+        "summary": "Health",
+        "operationId": "health_health_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v2/scrape": {
+      "post": {
+        "summary": "Scrape",
+        "operationId": "scrape_v2_scrape_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ScrapeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScrapeResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v2/agent": {
+      "post": {
+        "summary": "Create Agent",
+        "operationId": "create_agent_v2_agent_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentCreateResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v2/agent/{job_id}": {
+      "get": {
+        "summary": "Get Agent Status",
+        "operationId": "get_agent_status_v2_agent__job_id__get",
+        "parameters": [
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Job Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentStatusResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "summary": "Cancel Agent",
+        "operationId": "cancel_agent_v2_agent__job_id__delete",
+        "parameters": [
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Job Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentCancelResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v2/crawl": {
+      "post": {
+        "summary": "Create Crawl",
+        "operationId": "create_crawl_v2_crawl_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CrawlRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CrawlCreateResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "description": "Create a crawl job. Supports full Firecrawl v2 feature parity: path filtering (glob and regex), sitemap modes (include/skip/only), configurable concurrency and delay, robots.txt enforcement, content dedup (canonical + hash), caching with maxAge/minAge, per-page webhooks with HMAC signing, SSE streaming, NL-to-params via prompt, and advanced scrape options passthrough."
+      }
+    },
+    "/v2/crawl/{job_id}": {
+      "get": {
+        "summary": "Get Crawl Status",
+        "operationId": "get_crawl_status_v2_crawl__job_id__get",
+        "parameters": [
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Job Id"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "title": "Offset",
+              "default": 0
+            },
+            "description": "Zero-based index of the first page to return. Used for pagination."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CrawlStatusResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Job not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "description": "Get crawl job status and paginated results. Supports pagination via the offset query parameter and next response field. Returns enhanced metadata including created_at, completed_at, expires_at, duration, and per-page enrichment (title, status_code, content_type, scraped_at, duration_ms)."
+      },
+      "delete": {
+        "summary": "Cancel Crawl",
+        "operationId": "cancel_crawl_v2_crawl__job_id__delete",
+        "parameters": [
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Job Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentCancelResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Job not found or already completed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v2/batch/scrape": {
+      "post": {
+        "summary": "Create Batch Scrape",
+        "operationId": "create_batch_scrape_v2_batch_scrape_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BatchScrapeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CrawlCreateResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v2/search": {
+      "post": {
+        "summary": "Search",
+        "operationId": "search_v2_search_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SearchRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SearchResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v2/extract": {
+      "post": {
+        "summary": "Create Extract",
+        "description": "Extract structured data from provided URLs.",
+        "operationId": "create_extract_v2_extract_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExtractRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExtractCreateResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v2/extract/{job_id}": {
+      "get": {
+        "summary": "Get Extract Status",
+        "description": "Get extract job status and results.",
+        "operationId": "get_extract_status_v2_extract__job_id__get",
+        "parameters": [
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Job Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExtractStatusResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v2/map": {
+      "post": {
+        "summary": "Map Site",
+        "operationId": "map_site_v2_map_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MapRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v2/browser": {
+      "get": {
+        "summary": "List Browsers",
+        "operationId": "list_browsers_v2_browser_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BrowserListResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Create Browser",
+        "operationId": "create_browser_v2_browser_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BrowserCreateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BrowserCreateResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v2/browser/{session_id}/execute": {
+      "post": {
+        "summary": "Execute Browser",
+        "operationId": "execute_browser_v2_browser__session_id__execute_post",
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Session Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BrowserExecuteRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BrowserExecuteResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v2/browser/{session_id}": {
+      "delete": {
+        "summary": "Destroy Browser",
+        "operationId": "destroy_browser_v2_browser__session_id__delete",
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Session Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BrowserDeleteResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v2/monitor": {
+      "get": {
+        "summary": "List Monitors",
+        "operationId": "list_monitors_v2_monitor_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MonitorListResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Create Monitor",
+        "operationId": "create_monitor_v2_monitor_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MonitorCreateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MonitorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v2/monitor/{monitor_id}": {
+      "get": {
+        "summary": "Get Monitor Status",
+        "operationId": "get_monitor_status_v2_monitor__monitor_id__get",
+        "parameters": [
+          {
+            "name": "monitor_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Monitor Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MonitorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "summary": "Update Monitor",
+        "operationId": "update_monitor_v2_monitor__monitor_id__patch",
+        "parameters": [
+          {
+            "name": "monitor_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Monitor Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MonitorUpdateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MonitorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "summary": "Delete Monitor Route",
+        "operationId": "delete_monitor_route_v2_monitor__monitor_id__delete",
+        "parameters": [
+          {
+            "name": "monitor_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Monitor Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MonitorDeleteResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v2/parse": {
+      "post": {
+        "summary": "Parse File",
+        "description": "Upload a file and get its content as markdown.",
+        "operationId": "parse_file_v2_parse_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ParseResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v2/generate-llmstxt": {
+      "post": {
+        "summary": "Create Llmstxt",
+        "description": "Generate an llms.txt file for a website.",
+        "operationId": "create_llmstxt_v2_generate_llmstxt_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LLMsTextRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LLMsTextCreateResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v2/generate-llmstxt/{job_id}": {
+      "get": {
+        "summary": "Get Llmstxt Status",
+        "description": "Get llms.txt generation job status and results.",
+        "operationId": "get_llmstxt_status_v2_generate_llmstxt__job_id__get",
+        "parameters": [
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Job Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LLMsTextStatusResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v2/crawl/params-preview": {
+      "post": {
+        "summary": "Params Preview",
+        "description": "Preview crawl parameters derived from a natural-language prompt. Accepts a url and prompt, translates the prompt into crawl parameters using the LLM, and returns the derived parameters WITHOUT starting a crawl job. Synchronous \u2014 no job ID is created.",
+        "operationId": "params_preview_v2_crawl_params_preview_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ParamsPreviewRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ParamsPreviewResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v2/crawl/active": {
+      "get": {
+        "summary": "List Active Crawls",
+        "description": "List all active/processing crawl jobs. Returns only jobs with kind: 'crawl'. Excludes completed, failed, and cancelled crawls by default. Filterable via the status query parameter.",
+        "operationId": "list_active_crawls_v2_crawl_active_get",
+        "parameters": [
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "title": "Status",
+              "default": "processing"
+            },
+            "description": "Filter by job status. Default: processing."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CrawlActiveResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v2/crawl/{job_id}/errors": {
+      "get": {
+        "summary": "Get Crawl Errors",
+        "description": "Return per-URL errors and robots-blocked URLs for a crawl job. Includes error type classification, HTTP status codes, and timestamps for each failed URL.",
+        "operationId": "get_crawl_errors_v2_crawl__job_id__errors_get",
+        "parameters": [
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Job Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CrawlErrorsResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Job not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v2/crawl/{job_id}/stream": {
+      "get": {
+        "summary": "Stream Crawl Events",
+        "description": "Reconnect to a crawl SSE stream or replay completed results. Delivers page, progress, done, and error events as Server-Sent Events for real-time crawl progress monitoring.",
+        "operationId": "stream_crawl_v2_crawl__job_id__stream_get",
+        "parameters": [
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Job Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "SSE event stream",
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Job not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "AgentCancelResponse": {
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "title": "Success",
+            "default": true
+          }
+        },
+        "type": "object",
+        "title": "AgentCancelResponse"
+      },
+      "AgentCreateResponse": {
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "title": "Success",
+            "default": true
+          },
+          "id": {
+            "type": "string",
+            "title": "Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id"
+        ],
+        "title": "AgentCreateResponse"
+      },
+      "AgentRequest": {
+        "properties": {
+          "prompt": {
+            "type": "string",
+            "maxLength": 10000,
+            "title": "Prompt",
+            "description": "What the agent should research"
+          },
+          "urls": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Urls",
+            "description": "Optional seed URLs to constrain research"
+          },
+          "schema": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Schema",
+            "description": "JSON Schema for structured output"
+          },
+          "model": {
+            "type": "string",
+            "title": "Model",
+            "description": "Model hint",
+            "default": "default"
+          },
+          "max_credits": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Credits"
+          },
+          "webhook": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Webhook"
+          },
+          "strict_constrain_to_urls": {
+            "type": "boolean",
+            "title": "Strict Constrain To Urls",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "prompt"
+        ],
+        "title": "AgentRequest"
+      },
+      "AgentStatusResponse": {
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "title": "Success",
+            "default": true
+          },
+          "status": {
+            "type": "string",
+            "title": "Status",
+            "default": "processing"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Data"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "expires_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expires At"
+          },
+          "credits_used": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Credits Used"
+          }
+        },
+        "type": "object",
+        "title": "AgentStatusResponse"
+      },
+      "BatchScrapeRequest": {
+        "properties": {
+          "urls": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Urls"
+          },
+          "max_concurrency": {
+            "type": "integer",
+            "title": "Max Concurrency",
+            "default": 3
+          },
+          "webhook": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Webhook"
+          }
+        },
+        "type": "object",
+        "required": [
+          "urls"
+        ],
+        "title": "BatchScrapeRequest"
+      },
+      "BrowserCreateRequest": {
+        "properties": {
+          "ttl": {
+            "type": "integer",
+            "maximum": 3600.0,
+            "minimum": 30.0,
+            "title": "Ttl",
+            "description": "Session TTL in seconds",
+            "default": 300
+          }
+        },
+        "type": "object",
+        "title": "BrowserCreateRequest"
+      },
+      "BrowserCreateResponse": {
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "title": "Success",
+            "default": true
+          },
+          "id": {
+            "type": "string",
+            "title": "Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id"
+        ],
+        "title": "BrowserCreateResponse"
+      },
+      "BrowserDeleteResponse": {
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "title": "Success",
+            "default": true
+          },
+          "id": {
+            "type": "string",
+            "title": "Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id"
+        ],
+        "title": "BrowserDeleteResponse"
+      },
+      "BrowserExecuteRequest": {
+        "properties": {
+          "action": {
+            "type": "string",
+            "title": "Action",
+            "description": "Action: navigate, click, type, screenshot, scroll, wait, getContent, executeScript"
+          },
+          "url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Url"
+          },
+          "selector": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Selector"
+          },
+          "text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Text"
+          },
+          "script": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Script"
+          },
+          "timeout": {
+            "type": "integer",
+            "title": "Timeout",
+            "default": 10000
+          }
+        },
+        "type": "object",
+        "required": [
+          "action"
+        ],
+        "title": "BrowserExecuteRequest"
+      },
+      "BrowserExecuteResponse": {
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "title": "Success",
+            "default": true
+          },
+          "result": {
+            "title": "Result"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          }
+        },
+        "type": "object",
+        "title": "BrowserExecuteResponse"
+      },
+      "BrowserListResponse": {
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "title": "Success",
+            "default": true
+          },
+          "sessions": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Sessions"
+          }
+        },
+        "type": "object",
+        "title": "BrowserListResponse"
+      },
+      "CrawlCreateResponse": {
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "title": "Success",
+            "default": true
+          },
+          "id": {
+            "type": "string",
+            "title": "Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id"
+        ],
+        "title": "CrawlCreateResponse"
+      },
+      "CrawlRequest": {
+        "properties": {
+          "url": {
+            "type": "string",
+            "title": "Url",
+            "description": "The URL to start crawling from"
+          },
+          "max_pages": {
+            "type": "integer",
+            "title": "Max Pages",
+            "default": 10,
+            "minimum": 1,
+            "description": "Maximum number of pages to scrape. Must be >= 1."
+          },
+          "max_depth": {
+            "type": "integer",
+            "title": "Max Depth",
+            "default": 2,
+            "minimum": 0,
+            "description": "Maximum link-follow depth. Pages at max_depth are scraped but their links are not followed."
+          },
+          "limit": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Limit",
+            "description": "Alias for max_pages. When both are set, the stricter (minimum) wins."
+          },
+          "ignore_sitemap": {
+            "type": "boolean",
+            "title": "Ignore Sitemap",
+            "default": false,
+            "description": "When true, sitemap discovery is skipped (equivalent to sitemap='skip'). Backward compatibility."
+          },
+          "sitemap": {
+            "type": "string",
+            "title": "Sitemap",
+            "default": "include",
+            "description": "Sitemap mode: 'include' (default, sitemap+HTML), 'skip' (HTML only), or 'only' (sitemap only)."
+          },
+          "ignore_query_parameters": {
+            "type": "boolean",
+            "title": "Ignore Query Parameters",
+            "default": false,
+            "description": "When true, query-string variants of the same base URL are collapsed to one fetch."
+          },
+          "include_paths": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Include Paths",
+            "description": "Glob or regex patterns for URLs to include."
+          },
+          "exclude_paths": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Exclude Paths",
+            "description": "Glob or regex patterns for URLs to exclude (takes precedence over include_paths)."
+          },
+          "regex_on_full_url": {
+            "type": "boolean",
+            "title": "Regex On Full URL",
+            "default": false,
+            "description": "When true, include_paths/exclude_paths are treated as regex patterns rather than globs."
+          },
+          "verbose": {
+            "type": "boolean",
+            "title": "Verbose",
+            "default": false,
+            "description": "When true, track filtered-out URLs with reasons in the response."
+          },
+          "webhook": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Webhook",
+            "description": "Webhook config for per-page and completion events."
+          },
+          "crawl_entire_domain": {
+            "type": "boolean",
+            "title": "Crawl Entire Domain",
+            "default": false,
+            "description": "When true, ignores max_depth and follows all reachable pages up to max_pages."
+          },
+          "allow_subdomains": {
+            "type": "boolean",
+            "title": "Allow Subdomains",
+            "default": false,
+            "description": "When true, follow links to subdomains of the base domain."
+          },
+          "allow_external_links": {
+            "type": "boolean",
+            "title": "Allow External Links",
+            "default": false,
+            "description": "When true, follow links to external domains (with SSRF safety guard)."
+          },
+          "max_concurrency": {
+            "type": "integer",
+            "title": "Max Concurrency",
+            "default": 3,
+            "minimum": 1,
+            "description": "Maximum concurrent page scrapes. Values > 50 are capped to 50. Forced to 1 when delay is set."
+          },
+          "delay": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Delay",
+            "description": "Delay in seconds between scrapes. Forces concurrency to 1 when set."
+          },
+          "ignore_robots_txt": {
+            "type": "boolean",
+            "title": "Ignore Robots Txt",
+            "default": false,
+            "description": "When true, bypass robots.txt enforcement. All discovered URLs are scraped regardless of Disallow rules."
+          },
+          "robots_user_agent": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Robots User Agent",
+            "description": "Custom User-Agent for robots.txt evaluation."
+          },
+          "scrape_options": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ScrapeOptions"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scrape Options",
+            "description": "Per-page scrape options applied to every page in the crawl."
+          },
+          "prompt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 10000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Prompt",
+            "description": "Natural language description of what to crawl. Used to derive crawl parameters via LLM. Explicitly-set parameters override LLM-derived ones."
+          },
+          "stream": {
+            "type": "boolean",
+            "title": "Stream",
+            "default": false,
+            "description": "When true, the crawl response is delivered as Server-Sent Events (SSE) stream."
+          }
+        },
+        "type": "object",
+        "required": [
+          "url"
+        ],
+        "title": "CrawlRequest"
+      },
+      "CrawlStatusResponse": {
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "title": "Success",
+            "default": true
+          },
+          "status": {
+            "type": "string",
+            "title": "Status",
+            "default": "processing",
+            "description": "Job status: processing, completed, failed, or cancelled."
+          },
+          "completed": {
+            "type": "integer",
+            "title": "Completed",
+            "default": 0,
+            "description": "Number of pages successfully scraped."
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total",
+            "default": 0,
+            "description": "Total number of pages discovered (scraped + queued)."
+          },
+          "credits_used": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Credits Used",
+            "description": "Number of credits consumed (1 per page scraped)."
+          },
+          "data": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/PageData"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Data",
+            "description": "List of scraped page objects with url, markdown, metadata, and per-page enrichment."
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error",
+            "description": "Error message if the job failed."
+          },
+          "next": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next",
+            "description": "URL for the next chunk of paginated results. Present when data exceeds ~10MB. Null when all data fits in a single response."
+          },
+          "created_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At",
+            "description": "ISO 8601 timestamp when the crawl was created."
+          },
+          "completed_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed At",
+            "description": "ISO 8601 timestamp when the crawl finished. Null while processing."
+          },
+          "expires_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expires At",
+            "description": "ISO 8601 timestamp when results expire (24h after creation)."
+          },
+          "duration": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duration",
+            "description": "Elapsed milliseconds between created_at and completed_at. Null while processing."
+          }
+        },
+        "type": "object",
+        "title": "CrawlStatusResponse"
+      },
+      "ExtractCreateResponse": {
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "title": "Success",
+            "default": true
+          },
+          "id": {
+            "type": "string",
+            "title": "Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id"
+        ],
+        "title": "ExtractCreateResponse"
+      },
+      "ExtractRequest": {
+        "properties": {
+          "urls": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "minItems": 1,
+            "title": "Urls",
+            "description": "URLs to extract data from"
+          },
+          "prompt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 10000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Prompt",
+            "description": "Optional instruction for extraction"
+          },
+          "schema": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Schema",
+            "description": "JSON Schema for structured output"
+          },
+          "model": {
+            "type": "string",
+            "title": "Model",
+            "description": "Model hint",
+            "default": "default"
+          },
+          "webhook": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Webhook"
+          }
+        },
+        "type": "object",
+        "required": [
+          "urls"
+        ],
+        "title": "ExtractRequest"
+      },
+      "ExtractStatusResponse": {
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "title": "Success",
+            "default": true
+          },
+          "status": {
+            "type": "string",
+            "title": "Status",
+            "default": "processing"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Data"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "expires_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expires At"
+          }
+        },
+        "type": "object",
+        "title": "ExtractStatusResponse"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "type": "array",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "title": "HTTPValidationError"
+      },
+      "LLMsTextCreateResponse": {
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "title": "Success",
+            "default": true
+          },
+          "id": {
+            "type": "string",
+            "title": "Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id"
+        ],
+        "title": "LLMsTextCreateResponse"
+      },
+      "LLMsTextRequest": {
+        "properties": {
+          "url": {
+            "type": "string",
+            "title": "Url",
+            "description": "Site URL to generate llms.txt for"
+          },
+          "max_pages": {
+            "type": "integer",
+            "maximum": 500.0,
+            "minimum": 1.0,
+            "title": "Max Pages",
+            "description": "Max pages to scan",
+            "default": 50
+          },
+          "webhook": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Webhook"
+          }
+        },
+        "type": "object",
+        "required": [
+          "url"
+        ],
+        "title": "LLMsTextRequest"
+      },
+      "LLMsTextStatusResponse": {
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "title": "Success",
+            "default": true
+          },
+          "status": {
+            "type": "string",
+            "title": "Status",
+            "default": "processing"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Data"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "expires_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expires At"
+          }
+        },
+        "type": "object",
+        "title": "LLMsTextStatusResponse"
+      },
+      "MapRequest": {
+        "properties": {
+          "url": {
+            "type": "string",
+            "title": "Url"
+          },
+          "limit": {
+            "type": "integer",
+            "title": "Limit",
+            "default": 100
+          },
+          "search": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Search",
+            "description": "Optional substring filter for links."
+          },
+          "allow_subdomains": {
+            "type": "boolean",
+            "title": "Allow Subdomains",
+            "default": false,
+            "description": "When true, include links to subdomains."
+          },
+          "allow_external_links": {
+            "type": "boolean",
+            "title": "Allow External Links",
+            "default": false,
+            "description": "When true, include links to external domains."
+          }
+        },
+        "type": "object",
+        "required": [
+          "url"
+        ],
+        "title": "MapRequest"
+      },
+      "MapResponse": {
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "title": "Success",
+            "default": true
+          },
+          "links": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Links"
+          }
+        },
+        "type": "object",
+        "title": "MapResponse"
+      },
+      "MonitorCreateRequest": {
+        "properties": {
+          "url": {
+            "type": "string",
+            "title": "Url",
+            "description": "URL to monitor for changes"
+          },
+          "schedule": {
+            "type": "string",
+            "title": "Schedule",
+            "description": "Cron expression for check frequency",
+            "default": "0 */6 * * *"
+          },
+          "webhook": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Webhook",
+            "description": "Webhook URL called on change"
+          }
+        },
+        "type": "object",
+        "required": [
+          "url"
+        ],
+        "title": "MonitorCreateRequest"
+      },
+      "MonitorDeleteResponse": {
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "title": "Success",
+            "default": true
+          }
+        },
+        "type": "object",
+        "title": "MonitorDeleteResponse"
+      },
+      "MonitorListResponse": {
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "title": "Success",
+            "default": true
+          },
+          "monitors": {
+            "items": {
+              "$ref": "#/components/schemas/MonitorResponse"
+            },
+            "type": "array",
+            "title": "Monitors"
+          }
+        },
+        "type": "object",
+        "title": "MonitorListResponse"
+      },
+      "MonitorResponse": {
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "title": "Success",
+            "default": true
+          },
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "url": {
+            "type": "string",
+            "title": "Url"
+          },
+          "schedule": {
+            "type": "string",
+            "title": "Schedule"
+          },
+          "webhook": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Webhook"
+          },
+          "last_checked": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Checked"
+          },
+          "last_result": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Result"
+          },
+          "created_at": {
+            "type": "string",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "url",
+          "schedule",
+          "created_at"
+        ],
+        "title": "MonitorResponse"
+      },
+      "MonitorUpdateRequest": {
+        "properties": {
+          "url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Url"
+          },
+          "schedule": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Schedule"
+          },
+          "webhook": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Webhook"
+          }
+        },
+        "type": "object",
+        "title": "MonitorUpdateRequest"
+      },
+      "ParseResponse": {
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "title": "Success"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Data"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          }
+        },
+        "type": "object",
+        "required": [
+          "success"
+        ],
+        "title": "ParseResponse"
+      },
+      "ScrapeData": {
+        "properties": {
+          "markdown": {
+            "type": "string",
+            "title": "Markdown",
+            "default": ""
+          },
+          "metadata": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Metadata"
+          }
+        },
+        "type": "object",
+        "title": "ScrapeData"
+      },
+      "ScrapeRequest": {
+        "properties": {
+          "url": {
+            "type": "string",
+            "title": "Url"
+          },
+          "formats": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Formats",
+            "default": [
+              "markdown"
+            ]
+          },
+          "only_main_content": {
+            "type": "boolean",
+            "title": "Only Main Content",
+            "default": true
+          },
+          "timeout": {
+            "type": "integer",
+            "title": "Timeout",
+            "default": 30000
+          }
+        },
+        "type": "object",
+        "required": [
+          "url"
+        ],
+        "title": "ScrapeRequest"
+      },
+      "ScrapeResponse": {
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "title": "Success"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ScrapeData"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          }
+        },
+        "type": "object",
+        "required": [
+          "success"
+        ],
+        "title": "ScrapeResponse"
+      },
+      "SearchRequest": {
+        "properties": {
+          "query": {
+            "type": "string",
+            "title": "Query"
+          },
+          "limit": {
+            "type": "integer",
+            "title": "Limit",
+            "default": 5
+          }
+        },
+        "type": "object",
+        "required": [
+          "query"
+        ],
+        "title": "SearchRequest"
+      },
+      "SearchResponse": {
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "title": "Success",
+            "default": true
+          },
+          "data": {
+            "items": {
+              "$ref": "#/components/schemas/SearchResult"
+            },
+            "type": "array",
+            "title": "Data"
+          }
+        },
+        "type": "object",
+        "title": "SearchResponse"
+      },
+      "SearchResult": {
+        "properties": {
+          "url": {
+            "type": "string",
+            "title": "Url"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "description": {
+            "type": "string",
+            "title": "Description",
+            "default": ""
+          },
+          "markdown": {
+            "type": "string",
+            "title": "Markdown",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "required": [
+          "url",
+          "title"
+        ],
+        "title": "SearchResult"
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Location"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Message"
+          },
+          "type": {
+            "type": "string",
+            "title": "Error Type"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "ctx": {
+            "type": "object",
+            "title": "Context"
+          }
+        },
+        "type": "object",
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError"
+      },
+      "PageData": {
+        "properties": {
+          "url": {
+            "type": "string",
+            "title": "Url",
+            "description": "The URL of the scraped page."
+          },
+          "markdown": {
+            "type": "string",
+            "title": "Markdown",
+            "description": "Extracted page content as markdown."
+          },
+          "metadata": {
+            "type": "object",
+            "title": "Metadata",
+            "description": "Page metadata including title, description, language, sourceURL, statusCode.",
+            "properties": {
+              "title": {
+                "type": "string",
+                "title": "Title"
+              },
+              "description": {
+                "type": "string",
+                "title": "Description"
+              },
+              "language": {
+                "type": "string",
+                "title": "Language"
+              },
+              "sourceURL": {
+                "type": "string",
+                "title": "Source URL"
+              },
+              "statusCode": {
+                "type": "integer",
+                "title": "Status Code"
+              }
+            }
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title",
+            "description": "Page title extracted from metadata."
+          },
+          "status_code": {
+            "type": "integer",
+            "title": "Status Code",
+            "description": "HTTP status code of the page."
+          },
+          "content_type": {
+            "type": "string",
+            "title": "Content Type",
+            "description": "MIME content type of the response (e.g., text/html)."
+          },
+          "scraped_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Scraped At",
+            "description": "ISO 8601 timestamp of when this page was scraped."
+          },
+          "duration_ms": {
+            "type": "integer",
+            "title": "Duration Ms",
+            "description": "Time in milliseconds to scrape this individual page."
+          }
+        },
+        "type": "object",
+        "title": "PageData"
+      },
+      "ScrapeOptions": {
+        "properties": {
+          "formats": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Formats",
+            "default": [
+              "markdown"
+            ],
+            "description": "Output formats: markdown, html, links, screenshot, rawHtml, screenshot@fullPage."
+          },
+          "only_main_content": {
+            "type": "boolean",
+            "title": "Only Main Content",
+            "default": true,
+            "description": "Strip navigation/header/footer boilerplate."
+          },
+          "include_tags": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Include Tags",
+            "description": "Only include content from these CSS selectors."
+          },
+          "exclude_tags": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Exclude Tags",
+            "description": "Exclude content from these CSS selectors."
+          },
+          "wait_for": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Wait For",
+            "description": "Wait time in milliseconds before extraction."
+          },
+          "mobile": {
+            "type": "boolean",
+            "title": "Mobile",
+            "default": false,
+            "description": "Use mobile viewport and user-agent."
+          },
+          "timeout": {
+            "type": "integer",
+            "title": "Timeout",
+            "default": 30000,
+            "minimum": 1000,
+            "description": "Per-page timeout in milliseconds."
+          },
+          "headers": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Headers",
+            "description": "Custom HTTP headers to forward with the request."
+          },
+          "remove_base64_images": {
+            "type": "boolean",
+            "title": "Remove Base64 Images",
+            "default": false,
+            "description": "Strip data:image/... URIs from output."
+          },
+          "max_age": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Age",
+            "description": "Maximum age of cached content in milliseconds."
+          },
+          "min_age": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Min Age",
+            "description": "Minimum age for cache-only mode in milliseconds."
+          },
+          "actions": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Actions",
+            "description": "Ordered list of browser actions to execute before scraping each page."
+          },
+          "location": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "country": {
+                    "type": "string",
+                    "description": "ISO 3166-1 alpha-2 country code."
+                  },
+                  "languages": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array",
+                    "description": "BCP 47 language tags."
+                  }
+                }
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Location",
+            "description": "Geo-location settings for the browser session."
+          },
+          "proxy": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Proxy",
+            "description": "Proxy selection hint: basic, enhanced, or auto."
+          },
+          "block_ads": {
+            "type": "boolean",
+            "title": "Block Ads",
+            "default": true,
+            "description": "When true, strip ad content from scraped pages."
+          },
+          "parsers": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parsers",
+            "description": "List of parser types. At minimum [\"pdf\"] is recognised."
+          }
+        },
+        "type": "object",
+        "title": "ScrapeOptions"
+      },
+      "CrawlActiveItem": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id",
+            "description": "Crawl job UUID."
+          },
+          "url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Url",
+            "description": "The URL being crawled."
+          },
+          "status": {
+            "type": "string",
+            "title": "Status",
+            "default": "processing",
+            "description": "Job status: processing or other."
+          },
+          "created_at": {
+            "type": "string",
+            "title": "Created At",
+            "description": "ISO 8601 timestamp of crawl creation."
+          },
+          "completed": {
+            "type": "integer",
+            "title": "Completed",
+            "default": 0,
+            "description": "Pages scraped so far."
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total",
+            "default": 0,
+            "description": "Total pages discovered."
+          },
+          "max_pages": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Pages",
+            "description": "Maximum pages configured for this crawl."
+          },
+          "max_depth": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Depth",
+            "description": "Maximum depth configured for this crawl."
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "created_at"
+        ],
+        "title": "CrawlActiveItem"
+      },
+      "CrawlActiveResponse": {
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "title": "Success",
+            "default": true
+          },
+          "data": {
+            "items": {
+              "$ref": "#/components/schemas/CrawlActiveItem"
+            },
+            "type": "array",
+            "title": "Data",
+            "description": "List of active crawl jobs."
+          }
+        },
+        "type": "object",
+        "title": "CrawlActiveResponse"
+      },
+      "CrawlErrorItem": {
+        "properties": {
+          "url": {
+            "type": "string",
+            "title": "Url",
+            "description": "The URL that produced the error."
+          },
+          "error": {
+            "type": "string",
+            "title": "Error",
+            "default": "",
+            "description": "Human-readable error description."
+          },
+          "error_type": {
+            "type": "string",
+            "title": "Error Type",
+            "default": "scrape_error",
+            "description": "Machine-readable error category (e.g., timeout, robots_blocked, dns_error, http_error, scrape_error, cache_miss, duplicate_canonical, duplicate_content)."
+          },
+          "error_code": {
+            "type": "string",
+            "title": "Error Code",
+            "default": "",
+            "description": "Machine-readable error code (e.g., TIMEOUT, ROBOTS_BLOCKED, SCRAPE_ERROR)."
+          },
+          "timestamp": {
+            "type": "string",
+            "title": "Timestamp",
+            "default": "",
+            "description": "ISO 8601 timestamp of when the error occurred."
+          },
+          "timeout_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Timeout Ms",
+            "description": "For timeout errors, the per-scrape timeout in milliseconds."
+          },
+          "elapsed_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Elapsed Ms",
+            "description": "For timeout errors, the actual elapsed time before timeout in milliseconds."
+          },
+          "http_status": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Http Status",
+            "description": "For HTTP errors, the HTTP status code."
+          }
+        },
+        "type": "object",
+        "required": [
+          "url"
+        ],
+        "title": "CrawlErrorItem"
+      },
+      "CrawlErrorsResponse": {
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "title": "Success",
+            "default": true
+          },
+          "errors": {
+            "items": {
+              "$ref": "#/components/schemas/CrawlErrorItem"
+            },
+            "type": "array",
+            "title": "Errors",
+            "description": "List of error objects from the crawl."
+          },
+          "robots_blocked": {
+            "items": {
+              "$ref": "#/components/schemas/CrawlErrorItem"
+            },
+            "type": "array",
+            "title": "Robots Blocked",
+            "description": "Subset of errors containing only URLs blocked by robots.txt or politeness."
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          }
+        },
+        "type": "object",
+        "title": "CrawlErrorsResponse"
+      },
+      "ParamsPreviewRequest": {
+        "properties": {
+          "url": {
+            "type": "string",
+            "title": "Url",
+            "description": "The target URL to crawl (used for context)."
+          },
+          "prompt": {
+            "type": "string",
+            "maxLength": 10000,
+            "title": "Prompt",
+            "description": "Natural language description of what to crawl."
+          }
+        },
+        "type": "object",
+        "required": [
+          "url",
+          "prompt"
+        ],
+        "title": "ParamsPreviewRequest"
+      },
+      "ParamsPreviewResponse": {
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "title": "Success",
+            "default": true
+          },
+          "include_paths": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Include Paths",
+            "description": "Derived include path patterns."
+          },
+          "exclude_paths": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Exclude Paths",
+            "description": "Derived exclude path patterns."
+          },
+          "max_depth": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Depth",
+            "description": "Derived max depth."
+          },
+          "limit": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Limit",
+            "description": "Derived page limit."
+          },
+          "ignore_robots_txt": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ignore Robots Txt",
+            "description": "Whether robots.txt should be ignored."
+          },
+          "robots_user_agent": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Robots User Agent",
+            "description": "Derived custom User-Agent for robots.txt evaluation."
+          },
+          "deduplicate_similar_urls": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Deduplicate Similar Urls",
+            "description": "Whether similar URL deduplication is recommended."
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error",
+            "description": "Error message if the LLM is unavailable."
+          }
+        },
+        "type": "object",
+        "title": "ParamsPreviewResponse"
+      },
+      "ErrorResponse": {
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "title": "Success",
+            "default": false
+          },
+          "error": {
+            "type": "string",
+            "title": "Error",
+            "default": "An unexpected error occurred"
+          },
+          "error_code": {
+            "type": "string",
+            "title": "Error Code",
+            "default": "INTERNAL_ERROR"
+          },
+          "details": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/ErrorDetail"
+                },
+                "type": "array"
+              },
+              {
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Details"
+          }
+        },
+        "type": "object",
+        "title": "ErrorResponse"
+      },
+      "ErrorDetail": {
+        "properties": {
+          "field": {
+            "type": "string",
+            "title": "Field"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          }
+        },
+        "type": "object",
+        "required": [
+          "field",
+          "message"
+        ],
+        "title": "ErrorDetail"
+      }
+    }
+  }
+}

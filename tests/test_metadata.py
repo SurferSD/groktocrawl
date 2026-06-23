@@ -4,20 +4,18 @@ Unit tests — no Docker needed. Run directly:
     python -m pytest tests/test_metadata.py -v
 """
 
-import json
-import sys
 import os
+import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "scraper-svc"))
 
 from scraper.metadata import (
+    extract_all_metadata,
     extract_json_ld,
     extract_og_tags,
-    extract_twitter_tags,
     extract_standard_meta,
-    extract_all_metadata,
+    extract_twitter_tags,
 )
-
 
 # ── Test HTML fixtures ───────────────────────────────────────────
 

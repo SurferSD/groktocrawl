@@ -7,17 +7,26 @@ for scanned PDFs and table extraction for tabular data.
 import io
 import logging
 import os
-import re
 import tempfile
 from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI, HTTPException, UploadFile
+from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel
 
+from common.logging import setup_logging
+from common.metrics import METRICS
+from common.middleware import add_request_id_middleware
+
+setup_logging()
 logger = logging.getLogger(__name__)
 
 app = FastAPI(title="GroktoCrawl Parse Service", version="0.1.0")
+
+# ── Instrumentation ──────────────────────────────────────────
+add_request_id_middleware(app)
+METRICS.counter("parse_calls_total", "Total parse requests", ["status"])
 
 MAX_SIZE_MB = int(os.getenv("PARSE_MAX_SIZE_MB", "50"))
 MAX_SIZE_BYTES = MAX_SIZE_MB * 1024 * 1024
@@ -30,6 +39,7 @@ class ParseResponse(BaseModel):
 
 
 # ---- Format detection ----
+
 
 def _ext(filename: str) -> str:
     return Path(filename).suffix.lower().lstrip(".")
@@ -85,11 +95,16 @@ def _parse_pdf(content: bytes, filename: str) -> dict:
             import pytesseract
             from pdf2image import convert_from_bytes
 
-            images = convert_from_bytes(content, dpi=300, first_page=1, last_page=min(10, metadata.get("pages", 10)))
+            images = convert_from_bytes(
+                content,
+                dpi=300,
+                first_page=1,
+                last_page=min(10, metadata.get("pages", 10)),
+            )
             ocr_parts = []
             for i, img in enumerate(images):
                 text = pytesseract.image_to_string(img, lang="eng")
-                ocr_parts.append(f"--- Page {i+1} ---\n\n{text}")
+                ocr_parts.append(f"--- Page {i + 1} ---\n\n{text}")
             if ocr_parts:
                 ocr_text = "\n\n".join(ocr_parts).strip()
                 if len(ocr_text) > 50:
@@ -110,11 +125,13 @@ def _parse_pdf(content: bytes, filename: str) -> dict:
             from tabulate import tabulate
 
             table_md_parts = []
-            for i, table in enumerate(tables):
+            for _i, table in enumerate(tables):
                 md = tabulate(table.df, headers="keys", tablefmt="github")
                 table_md_parts.append(md)
             if table_md_parts:
-                markdown_parts.append("\n\n### Extracted Tables\n\n" + "\n\n".join(table_md_parts))
+                markdown_parts.append(
+                    "\n\n### Extracted Tables\n\n" + "\n\n".join(table_md_parts)
+                )
                 metadata["tables_found"] = len(tables)
     except ImportError:
         logger.debug("camelot not available, skipping table extraction")
@@ -146,7 +163,9 @@ def _parse_docx(content: bytes, filename: str) -> dict:
             if rows:
                 from tabulate import tabulate
 
-                table_parts.append(tabulate(rows, headers="firstrow", tablefmt="github"))
+                table_parts.append(
+                    tabulate(rows, headers="firstrow", tablefmt="github")
+                )
         if table_parts:
             text += "\n\n### Tables\n\n" + "\n\n".join(table_parts)
 
@@ -158,7 +177,7 @@ def _parse_docx(content: bytes, filename: str) -> dict:
         }
         return {"markdown": text.strip(), "metadata": metadata}
     except Exception as e:
-        raise HTTPException(status_code=422, detail=f"Failed to parse DOCX: {e}")
+        raise HTTPException(status_code=422, detail=f"Failed to parse DOCX: {e}")  # noqa: B904
 
 
 def _parse_pptx(content: bytes, filename: str) -> dict:
@@ -183,7 +202,10 @@ def _parse_pptx(content: bytes, filename: str) -> dict:
                         rows.append(cells)
                     if rows:
                         from tabulate import tabulate
-                        slide_parts.append(tabulate(rows, headers="firstrow", tablefmt="github"))
+
+                        slide_parts.append(
+                            tabulate(rows, headers="firstrow", tablefmt="github")
+                        )
             slides_text.append("\n\n".join(slide_parts))
 
         metadata = {
@@ -191,9 +213,12 @@ def _parse_pptx(content: bytes, filename: str) -> dict:
             "filename": filename,
             "slides": len(prs.slides),
         }
-        return {"markdown": "\n\n---\n\n".join(slides_text).strip(), "metadata": metadata}
+        return {
+            "markdown": "\n\n---\n\n".join(slides_text).strip(),
+            "metadata": metadata,
+        }
     except Exception as e:
-        raise HTTPException(status_code=422, detail=f"Failed to parse PPTX: {e}")
+        raise HTTPException(status_code=422, detail=f"Failed to parse PPTX: {e}")  # noqa: B904
 
 
 def _parse_xlsx(content: bytes, filename: str) -> dict:
@@ -210,7 +235,10 @@ def _parse_xlsx(content: bytes, filename: str) -> dict:
                 rows.append([str(c) if c is not None else "" for c in row])
             if rows:
                 from tabulate import tabulate
-                sheets_md.append(f"### Sheet: {sheet_name}\n\n{tabulate(rows, headers='firstrow', tablefmt='github')}")
+
+                sheets_md.append(
+                    f"### Sheet: {sheet_name}\n\n{tabulate(rows, headers='firstrow', tablefmt='github')}"
+                )
 
         wb.close()
         metadata = {
@@ -220,7 +248,7 @@ def _parse_xlsx(content: bytes, filename: str) -> dict:
         }
         return {"markdown": "\n\n".join(sheets_md).strip(), "metadata": metadata}
     except Exception as e:
-        raise HTTPException(status_code=422, detail=f"Failed to parse XLSX: {e}")
+        raise HTTPException(status_code=422, detail=f"Failed to parse XLSX: {e}")  # noqa: B904
 
 
 def _parse_text(content: bytes, filename: str) -> dict:
@@ -240,6 +268,7 @@ def _parse_csv(content: bytes, filename: str) -> dict:
     rows = list(reader)
     if rows:
         from tabulate import tabulate
+
         md = tabulate(rows, headers="firstrow", tablefmt="github")
     else:
         md = text
@@ -253,17 +282,33 @@ def _parse_via_markitdown(content: bytes, filename: str) -> dict:
         from markitdown import MarkItDown
 
         md_converter = MarkItDown()
-        with tempfile.NamedTemporaryFile(suffix=f".{_ext(filename)}", delete=False) as tmp:
+        with tempfile.NamedTemporaryFile(
+            suffix=f".{_ext(filename)}", delete=False
+        ) as tmp:
             tmp.write(content)
             tmp_path = tmp.name
         try:
             result = md_converter.convert(tmp_path)
-            return {"markdown": result.text_content.strip(), "metadata": {"format": _ext(filename), "filename": filename, "extraction": "markitdown"}}
+            return {
+                "markdown": result.text_content.strip(),
+                "metadata": {
+                    "format": _ext(filename),
+                    "filename": filename,
+                    "extraction": "markitdown",
+                },
+            }
         finally:
             os.unlink(tmp_path)
     except Exception as e:
         logger.warning("markitdown failed for %s: %s", filename, e)
-        return {"markdown": content.decode("utf-8", errors="replace")[:50000], "metadata": {"format": _ext(filename), "filename": filename, "extraction": "raw"}}
+        return {
+            "markdown": content.decode("utf-8", errors="replace")[:50000],
+            "metadata": {
+                "format": _ext(filename),
+                "filename": filename,
+                "extraction": "raw",
+            },
+        }
 
 
 # ---- Router ----
@@ -290,6 +335,15 @@ async def health():
     return {"status": "ok"}
 
 
+@app.get("/metrics")
+async def metrics():
+    """Prometheus-compatible OpenMetrics endpoint."""
+    return PlainTextResponse(
+        METRICS.generate_openmetrics(),
+        media_type="application/openmetrics-text; version=1.0.0",
+    )
+
+
 @app.post("/parse", response_model=ParseResponse)
 async def parse_file(file: UploadFile):
     """Upload a file and get its content as markdown."""
@@ -298,14 +352,22 @@ async def parse_file(file: UploadFile):
 
     ext = _ext(file.filename)
     if not ext:
-        raise HTTPException(status_code=400, detail=f"Could not determine file extension: {file.filename}")
+        raise HTTPException(
+            status_code=400,
+            detail=f"Could not determine file extension: {file.filename}",
+        )
 
     if ext not in SUPPORTED_FORMATS:
-        raise HTTPException(status_code=400, detail=f"Unsupported format: .{ext}. Supported: {', '.join(sorted(SUPPORTED_FORMATS))}")
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unsupported format: .{ext}. Supported: {', '.join(sorted(SUPPORTED_FORMATS))}",
+        )
 
     content = await file.read()
     if len(content) > MAX_SIZE_BYTES:
-        raise HTTPException(status_code=413, detail=f"File too large. Max {MAX_SIZE_MB}MB.")
+        raise HTTPException(
+            status_code=413, detail=f"File too large. Max {MAX_SIZE_MB}MB."
+        )
 
     logger.info("Parsing %s (%s, %d bytes)", file.filename, ext, len(content))
 

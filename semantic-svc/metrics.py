@@ -27,11 +27,23 @@ Usage::
 import threading
 from collections import defaultdict
 
-
 DEFAULT_BUCKETS = [
-    0.005, 0.01, 0.025, 0.05, 0.075,
-    0.1, 0.25, 0.5, 0.75, 1.0,
-    2.5, 5.0, 7.5, 10.0, 30.0, 60.0,
+    0.005,
+    0.01,
+    0.025,
+    0.05,
+    0.075,
+    0.1,
+    0.25,
+    0.5,
+    0.75,
+    1.0,
+    2.5,
+    5.0,
+    7.5,
+    10.0,
+    30.0,
+    60.0,
 ]
 
 
@@ -113,10 +125,14 @@ class MetricsCollector:
     def __init__(self) -> None:
         self._lock = threading.Lock()
         self._counters: dict[str, tuple[_SafeCounter, str, list[str]]] = {}
-        self._histograms: dict[str, tuple[_SafeHistogram, str, list[str], list[float]]] = {}
+        self._histograms: dict[
+            str, tuple[_SafeHistogram, str, list[str], list[float]]
+        ] = {}
         self._gauges: dict[str, tuple[_SafeGauge, str, list[str]]] = {}
 
-    def counter(self, name: str, help_text: str, label_names: list[str] | None = None) -> _SafeCounter:
+    def counter(
+        self, name: str, help_text: str, label_names: list[str] | None = None
+    ) -> _SafeCounter:
         """Get or create a counter metric."""
         with self._lock:
             if name not in self._counters:
@@ -134,10 +150,17 @@ class MetricsCollector:
         with self._lock:
             if name not in self._histograms:
                 b = buckets or DEFAULT_BUCKETS
-                self._histograms[name] = (_SafeHistogram(b), help_text, label_names or [], b)
+                self._histograms[name] = (
+                    _SafeHistogram(b),
+                    help_text,
+                    label_names or [],
+                    b,
+                )
             return self._histograms[name][0]
 
-    def gauge(self, name: str, help_text: str, label_names: list[str] | None = None) -> _SafeGauge:
+    def gauge(
+        self, name: str, help_text: str, label_names: list[str] | None = None
+    ) -> _SafeGauge:
         """Get or create a gauge metric."""
         with self._lock:
             if name not in self._gauges:
@@ -163,33 +186,38 @@ class MetricsCollector:
             for key, value in safe_counter._collect():
                 lbls = _format_labels_no_braces(key)
                 if lbls:
-                    lines.append(f'{name}{{{lbls}}} {value}')
+                    lines.append(f"{name}{{{lbls}}} {value}")
                 else:
-                    lines.append(f'{name} {value}')
+                    lines.append(f"{name} {value}")
             lines.append("")
 
         # Histograms — count, sum, per-bucket with le= label
-        for name, (safe_hist, help_text, label_names, buckets) in self._histograms.items():
+        for name, (
+            safe_hist,
+            help_text,
+            label_names,
+            buckets,
+        ) in self._histograms.items():
             lines.append(f"# HELP {name} {help_text}")
             lines.append(f"# TYPE {name} histogram")
             for key, total_count in sorted(safe_hist._total_counts.items()):
                 lbls = _format_labels_no_braces(key)
                 if lbls:
-                    lines.append(f'{name}_count{{{lbls}}} {total_count}')
+                    lines.append(f"{name}_count{{{lbls}}} {total_count}")
                 else:
-                    lines.append(f'{name}_count {total_count}')
+                    lines.append(f"{name}_count {total_count}")
             for key, total_sum in sorted(safe_hist._sum.items()):
                 lbls = _format_labels_no_braces(key)
                 if lbls:
-                    lines.append(f'{name}_sum{{{lbls}}} {total_sum}')
+                    lines.append(f"{name}_sum{{{lbls}}} {total_sum}")
                 else:
-                    lines.append(f'{name}_sum {total_sum}')
+                    lines.append(f"{name}_sum {total_sum}")
             for b in safe_hist._get_buckets():
                 for key, count in sorted(safe_hist._counts[b].items()):
                     parts = _format_labels_no_braces(key)
                     le_part = f'le="{b}"'
                     bucket_labels = f"{parts},{le_part}" if parts else le_part
-                    lines.append(f'{name}_bucket{{{bucket_labels}}} {count}')
+                    lines.append(f"{name}_bucket{{{bucket_labels}}} {count}")
             lines.append("")
 
         # Gauges
@@ -199,9 +227,9 @@ class MetricsCollector:
             for key, value in safe_gauge._collect():
                 lbls = _format_labels_no_braces(key)
                 if lbls:
-                    lines.append(f'{name}{{{lbls}}} {value}')
+                    lines.append(f"{name}{{{lbls}}} {value}")
                 else:
-                    lines.append(f'{name} {value}')
+                    lines.append(f"{name} {value}")
             lines.append("")
 
         lines.append("# EOF")
