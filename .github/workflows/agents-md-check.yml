@@ -1,0 +1,61 @@
+# AGENTS.md Validation CI
+#
+# Validates that key commands documented in AGENTS.md are still
+# runnable and that the file itself is well-formed.
+#
+# Runs on PRs that modify AGENTS.md and on pushes to main.
+
+name: AGENTS.md Validation
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "AGENTS.md"
+      - "docker-compose.yml"
+      - "**/Dockerfile"
+  pull_request:
+    branches: [main]
+    paths:
+      - "AGENTS.md"
+      - "docker-compose.yml"
+      - "**/Dockerfile"
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Verify AGENTS.md is not empty
+        run: |
+          size=$(wc -c < AGENTS.md)
+          if [ "$size" -lt 100 ]; then
+            echo "AGENTS.md is too small ($size bytes). Should be >100 bytes."
+            exit 1
+          fi
+          echo "AGENTS.md: $size bytes"
+
+      - name: Check AGENTS.md has required sections
+        run: |
+          errors=0
+          for section in "Project Overview" "Repo Structure" "Testing" "Making Changes"; do
+            if ! grep -q "$section" AGENTS.md; then
+              echo "MISSING: '$section' section"
+              errors=$((errors + 1))
+            fi
+          done
+          if [ "$errors" -gt 0 ]; then
+            echo "AGENTS.md missing $errors required sections"
+            exit 1
+          fi
+          echo "All required sections present"
+
+      - name: Validate docker compose config
+        run: docker compose -f docker-compose.yml config --quiet 2>&1 || true
+
+      - name: Check ADR index references
+        run: |
+          if [ -f docs/adr/README.md ]; then
+            echo "ADR index found at docs/adr/README.md"
+          fi

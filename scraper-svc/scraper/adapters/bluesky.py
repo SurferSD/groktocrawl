@@ -11,6 +11,7 @@ Public endpoint: https://public.api.bsky.app
 
 from __future__ import annotations
 
+import contextlib
 import logging
 import re
 from urllib.parse import urlparse
@@ -79,10 +80,7 @@ async def _fetch_post_thread(did: str, rkey: str) -> dict | None:
     response, or ``None`` on failure.
     """
     at_uri = f"at://{did}/app.bsky.feed.post/{rkey}"
-    url = (
-        f"{PUBLIC_API_URL}/xrpc/app.bsky.feed.getPostThread"
-        f"?uri={at_uri}&depth=1"
-    )
+    url = f"{PUBLIC_API_URL}/xrpc/app.bsky.feed.getPostThread?uri={at_uri}&depth=1"
     try:
         async with httpx.AsyncClient(timeout=15) as client:
             resp = await client.get(url)
@@ -241,10 +239,10 @@ def _format_thread(thread: dict) -> tuple[str, dict]:
     """
     post = thread.get("post", {})
     author = post.get("author", {})
-    record = post.get("record", {})
+    post.get("record", {})
 
     # Root post text
-    root_text = _extract_post_text(post)
+    _extract_post_text(post)
     timestamp = _format_timestamp(post)
 
     # Counts come from the post view, not the record
@@ -267,17 +265,22 @@ def _format_thread(thread: dict) -> tuple[str, dict]:
             images = embed.get("images", [])
             if not images and "image" in embed:
                 images = [embed["image"]]
-            embed_markdown = "\n" + "\n".join(
-                f"![{img.get('alt', 'Image')}]({img.get('image', {}).get('ref', {}).get('$link', '') or img.get('ref', '')})"
-                for img in images
-            ) + "\n" if images else ""
+            embed_markdown = (
+                "\n"
+                + "\n".join(
+                    f"![{img.get('alt', 'Image')}]({img.get('image', {}).get('ref', {}).get('$link', '') or img.get('ref', '')})"
+                    for img in images
+                )
+                + "\n"
+                if images
+                else ""
+            )
         elif "record" in embed_type:
             quoted = embed.get("record", {})
             quoted_author = quoted.get("author", {})
             quoted_text = _extract_post_text(quoted)
             embed_markdown = (
-                f"\n> **@{quoted_author.get('handle', 'unknown')}**\n"
-                f"> {quoted_text}\n"
+                f"\n> **@{quoted_author.get('handle', 'unknown')}**\n> {quoted_text}\n"
             )
 
     # Build metadata
@@ -312,9 +315,7 @@ def _format_thread(thread: dict) -> tuple[str, dict]:
 # ── Browser fallback ─────────────────────────────────────────────
 
 
-async def _fetch_via_browser(
-    url: str, ctx: AdapterContext
-) -> tuple[str, dict] | None:
+async def _fetch_via_browser(url: str, ctx: AdapterContext) -> tuple[str, dict] | None:
     """Fallback: render Bluesky page in browser, extract text + metadata.
 
     Returns ``(markdown, metadata)`` or ``None``.
@@ -361,22 +362,19 @@ async def _fetch_via_browser(
                 f"{browser_svc_url}/browsers/{session_id}/execute",
                 json={
                     "action": "executeScript",
-                    "script": (
-                        "JSON.stringify({"
-                        "title: document.title,"
-                        "})"
-                    ),
+                    "script": ("JSON.stringify({title: document.title,})"),
                 },
             )
             metadata: dict = {"source": "bluesky-adapter"}
             if meta_resp.json().get("success"):
                 import json
 
-                raw = meta_resp.json().get("result", {}).get("script_result", "{}") or "{}"
-                try:
+                raw = (
+                    meta_resp.json().get("result", {}).get("script_result", "{}")
+                    or "{}"
+                )
+                with contextlib.suppress(json.JSONDecodeError):
                     metadata.update(json.loads(raw))
-                except json.JSONDecodeError:
-                    pass
 
             if not body_text:
                 return None

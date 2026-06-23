@@ -10,3 +10,17 @@ __pypackages__/
 .opencode/
 .planning/
 .coverage
+graphify-out/
+docker-compose.override.yml
+ofelia/config.local.ini
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE configs
+.idea/
+.vscode/
+*.swp
+*.swo
+*~

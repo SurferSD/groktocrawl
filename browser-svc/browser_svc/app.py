@@ -7,20 +7,24 @@ Each session is an isolated Chromium instance with its own context.
 import asyncio
 import json
 import logging
-import socket
+import random
 import time
 import uuid
-from ipaddress import ip_address, ip_network
 from typing import Any
 
 from fastapi import FastAPI, HTTPException
+from fastapi.responses import PlainTextResponse
 from playwright.async_api import async_playwright
 from pydantic import BaseModel
 
-from common.url import extract_domain
+from common.logging import setup_logging
+from common.metrics import METRICS
+from common.middleware import add_request_id_middleware
+from common.url import extract_domain, is_private_host
 
 from .settings import load_settings
 
+setup_logging()
 logger = logging.getLogger(__name__)
 
 # ── Cookie persistence ─────────────────────────────────────────
@@ -120,68 +124,17 @@ def _is_bot_challenge(title: str, url: str) -> bool:
     for indicator in DDOS_GUARD_INDICATORS:
         if indicator.lower() in title.lower():
             return True
-    if "ddos-guard" in url.lower() or "/.well-known/ddos-guard" in url.lower():
+    if "ddos-guard" in url.lower() or "/.well-known/ddos-guard" in url.lower():  # noqa: SIM103
         return True
     return False
 
 
-# ── Private IP / SSRF protection ─────────────────────────────────
-
-# Private and special-purpose IP ranges that should never be navigated to
-_PRIVATE_NETWORKS = [
-    ip_network("10.0.0.0/8"),
-    ip_network("172.16.0.0/12"),
-    ip_network("192.168.0.0/16"),
-    ip_network("127.0.0.0/8"),  # loopback
-    ip_network("::1/128"),  # IPv6 loopback
-    ip_network("169.254.0.0/16"),  # link-local
-    ip_network("0.0.0.0/8"),  # "this" network
-    ip_network("100.64.0.0/10"),  # Carrier-grade NAT (RFC 6598)
-    ip_network("198.18.0.0/15"),  # Benchmarking (RFC 2544)
-    ip_network("240.0.0.0/4"),  # Reserved / future use
-]
-
-_METADATA_IPS = {
-    ip_address("169.254.169.254"),  # AWS/GCP/Azure metadata
-    ip_address("fd00:ec2::254"),  # AWS IMDSv2 IPv6
-}
-
-# Docker-internal hostnames that resolve to the host machine
-_PRIVATE_HOSTNAME_SUFFIXES = [
-    ".docker.internal",
-]
-
-
-def _resolve_to_ips(hostname: str) -> list:
-    """Resolve a hostname to all IP addresses (IPv4 and IPv6)."""
-    try:
-        addrinfo = socket.getaddrinfo(hostname, None)
-        ips = set()
-        for family, _, _, _, sockaddr in addrinfo:
-            try:
-                ips.add(ip_address(sockaddr[0]))
-            except ValueError:
-                continue
-        return list(ips)
-    except socket.gaierror:
-        return []
-
-
-def _is_private_url(url: str) -> tuple[bool, str]:
-    """Check if a URL targets a private/internal IP or hostname.
-
-    Returns (is_private, reason) tuple.
-
-    Delegates to the shared ``common.url.is_private_host``
-    for the actual check, then maps the boolean result back to the
-    ``(bool, str)`` tuple format.
-    """
-    from common.url import is_private_host as _shared_is_private
-
-    return (True, "Private or internal URL") if _shared_is_private(url) else (False, "")
-
-
 app = FastAPI(title="GroktoCrawl Browser Service", version="0.1.0")
+
+# ── Instrumentation ──────────────────────────────────────────
+add_request_id_middleware(app)
+METRICS.counter("browser_sessions_created_total", "Total browser sessions created")
+METRICS.counter("browser_sessions_expired_total", "Total browser sessions expired")
 
 # In-memory session store
 _sessions: dict[str, "SessionData"] = {}
@@ -201,7 +154,7 @@ class SessionData:
 
     @property
     def expired(self) -> bool:
-        return time.time() - self.created_at > self.ttl
+        return time.time() - self.created_at >= self.ttl
 
     @property
     def idle_seconds(self) -> float:
@@ -292,6 +245,15 @@ async def health():
     return {"status": "ok", "active_sessions": len(_sessions)}
 
 
+@app.get("/metrics")
+async def metrics():
+    """Prometheus-compatible OpenMetrics endpoint."""
+    return PlainTextResponse(
+        METRICS.generate_openmetrics(),
+        media_type="application/openmetrics-text; version=1.0.0",
+    )
+
+
 @app.post("/browsers", response_model=BrowserCreateResponse)
 async def create_browser(req: BrowserCreateRequest):
     """Create a new headless browser session."""
@@ -308,7 +270,10 @@ async def create_browser(req: BrowserCreateRequest):
             ],
         )
         context = await browser.new_context(
-            viewport={"width": 1920, "height": 1080},
+            viewport={
+                "width": 1920 + random.randint(-5, 5),
+                "height": 1080 + random.randint(-5, 5),
+            },
             user_agent=REAL_CHROME_UA,
             locale="en-US",
             timezone_id="America/New_York",
@@ -317,9 +282,44 @@ async def create_browser(req: BrowserCreateRequest):
         page = await context.new_page()
         # Hide Playwright automation signals from bot detection
         await page.add_init_script("""() => {
+            // Override navigator properties
             Object.defineProperty(navigator, 'webdriver', {
                 get: () => undefined
             });
+
+            // Real Chrome reports 5 plugins (Chrome PDF Plugin, Chrome PDF Viewer, Native Client, etc.)
+            Object.defineProperty(navigator, 'plugins', {
+                get: () => [
+                    { name: 'Chrome PDF Plugin', filename: 'internal-pdf-viewer' },
+                    { name: 'Chrome PDF Viewer', filename: 'mhjfbmdgcfjbbpaeojofohoefgiehjai' },
+                    { name: 'Native Client', filename: 'internal-nacl-plugin' },
+                ],
+            });
+
+            // Real Chrome reports these languages
+            Object.defineProperty(navigator, 'languages', { get: () => ['en-US', 'en'] });
+
+            // Typical modern hardware concurrency (8 cores is most common)
+            Object.defineProperty(navigator, 'hardwareConcurrency', { get: () => 8 });
+
+            // Add chrome.runtime (real Chrome has it, headless Playwright doesn't)
+            if (window.chrome) {
+                window.chrome.runtime = {};
+            }
+
+            // Override WebGL vendor/renderer to look like a real GPU
+            const getParameter = WebGLRenderingContext.prototype.getParameter;
+            WebGLRenderingContext.prototype.getParameter = function(parameter) {
+                // UNMASKED_VENDOR_WEBGL
+                if (parameter === 37445) {
+                    return 'Intel Inc.';
+                }
+                // UNMASKED_RENDERER_WEBGL
+                if (parameter === 37446) {
+                    return 'Intel Iris OpenGL Engine';
+                }
+                return getParameter.call(this, parameter);
+            };
         }""")
         session = SessionData(browser, context, page, req.ttl)
         _sessions[session_id] = session
@@ -327,7 +327,7 @@ async def create_browser(req: BrowserCreateRequest):
         return BrowserCreateResponse(id=session_id)
     except Exception as e:
         logger.error("Failed to create browser session: %s", e)
-        raise HTTPException(
+        raise HTTPException(  # noqa: B904
             status_code=500, detail=f"Failed to create browser session: {e}"
         )
 
@@ -352,11 +352,10 @@ async def execute_action(session_id: str, req: BrowserExecuteRequest):
                     status_code=400, detail="url required for navigate action"
                 )
             # Security: reject private/internal destination URLs
-            is_private, reason = _is_private_url(req.url)
-            if is_private:
+            if is_private_host(req.url):
                 raise HTTPException(
                     status_code=400,
-                    detail=f"Navigation to private or internal destination blocked: {reason}",
+                    detail="Navigation to private or internal destination blocked",
                 )
             # Inject stored Cloudflare clearance cookies before navigation
             redis_client = getattr(app.state, "redis", None)

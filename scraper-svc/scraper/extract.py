@@ -105,18 +105,20 @@ def _check_boilerplate(markdown: str) -> tuple[float, str]:
         return 0.0, "fail"
 
     lines = markdown.strip().split("\n")
-    non_empty = [l.strip() for l in lines if l.strip()]
+    non_empty = [line.strip() for line in lines if line.strip()]
 
     if not non_empty:
         return 0.0, "fail"
 
     # Count link-heavy lines
-    link_lines = sum(1 for l in non_empty if re.search(r"\[.*?\]\(.*?\)", l))
+    link_lines = sum(1 for line in non_empty if re.search(r"\[.*?\]\(.*?\)", line))
     link_ratio = link_lines / len(non_empty)
 
     # Count substantive paragraphs (multi-sentence, non-link lines)
     substantive = sum(
-        1 for l in non_empty if len(l) > 60 and not re.search(r"\[.*?\]\(.*?\)", l)
+        1
+        for line in non_empty
+        if len(line) > 60 and not re.search(r"\[.*?\]\(.*?\)", line)
     )
 
     # Score

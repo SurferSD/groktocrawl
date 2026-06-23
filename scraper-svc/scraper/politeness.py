@@ -10,8 +10,22 @@ Architecture:
     check() which returns an action: PROCEED, DELAY (with seconds to wait),
     or BLOCKED (with reason). The caller is responsible for actually sleeping
     before proceeding.
+
+Thread-safety:
+    Per-domain asyncio Lock ensures that concurrent tasks targeting the
+    same domain are serialized during the check() call. Only one robots.txt
+    fetch occurs per domain (VAL-CONC-037). The check → record cycle is
+    atomic so two tasks cannot both see a stale last_request timestamp
+    (VAL-CONC-031).
+
+Distributed coordination:
+    When Valkey is available, last-request timestamps are shared across
+    instances via Valkey. This enables multi-instance crawl deployments
+    to respect per-domain rate limits collectively (VAL-CONC-019).
 """
 
+import asyncio
+import contextlib
 import hashlib
 import logging
 import re
@@ -38,6 +52,9 @@ USER_AGENT = (
     "AppleWebKit/537.36 (KHTML, like Gecko) "
     "Chrome/131.0.0.0 Safari/537.36"
 )
+
+# Valkey key prefix for distributed rate limiting
+_RATE_KEY_PREFIX = "politeness:rate:"
 
 
 @dataclass
@@ -68,11 +85,16 @@ class PolitenessManager:
     Tracks robots.txt state and request timing per domain. Operates
     only when SCRAPER_POLITENESS_ENABLED=true. Designed as a singleton
     — instantiate via get_manager().
+
+    Concurrency: Per-domain asyncio Locks ensure atomic check → record
+    cycles and exactly-once robots.txt fetching per domain.
     """
 
     def __init__(self) -> None:
         self._domains: dict[str, _DomainState] = {}
+        self._domain_locks: dict[str, asyncio.Lock] = {}
         self._enabled = POLITENESS_ENABLED
+        self._rate_ttl: int = 60  # TTL for rate-limit keys in Valkey
 
     @property
     def enabled(self) -> bool:
@@ -85,6 +107,18 @@ class PolitenessManager:
         """Extract the hostname from a URL for rate-limiting key."""
         return extract_domain(url)
 
+    # ── Per-domain lock for race safety ─────────────────────────
+
+    def _get_domain_lock(self, domain: str) -> asyncio.Lock:
+        """Get or create a per-domain asyncio Lock.
+
+        Ensures atomic check → record cycles and exactly-once
+        robots.txt fetching per domain (VAL-CONC-037).
+        """
+        if domain not in self._domain_locks:
+            self._domain_locks[domain] = asyncio.Lock()
+        return self._domain_locks[domain]
+
     # ── Robots.txt fetch + parse ────────────────────────────────
 
     def _robots_cache_key(self, domain: str) -> str:
@@ -92,14 +126,37 @@ class PolitenessManager:
         digest = hashlib.sha256(domain.encode("utf-8")).hexdigest()
         return f"politeness:robots:{digest}"
 
-    async def _fetch_and_parse_robots(self, domain: str) -> None:
+    @staticmethod
+    def _rate_key(domain: str) -> str:
+        """Valkey key for distributed rate-limit state."""
+        digest = hashlib.sha256(domain.encode("utf-8")).hexdigest()
+        return f"{_RATE_KEY_PREFIX}{digest}"
+
+    async def _fetch_and_parse_robots(
+        self, domain: str, user_agent: str | None = None
+    ) -> None:
         """Fetch robots.txt for a domain and parse disallowed paths.
 
-        Stores parsed rules in the in-memory domain state. Results are
-        also cached in Valkey (when available) for persistence across
-        container restarts.
+        Uses a per-domain asyncio Lock to ensure only one concurrent
+        fetch per domain (VAL-CONC-037). Also checks Valkey cache
+        before fetching.
+
+        Args:
+            domain: The domain to fetch robots.txt for.
+            user_agent: Custom User-Agent string for the robots.txt
+                request. If None, uses the default USER_AGENT.
         """
         state = self._domains.setdefault(domain, _DomainState())
+
+        # Check Valkey cache first
+        cached = await self._robots_cache_load(domain)
+        if cached:
+            self._parse_robots_txt(cached, state)
+            state.robots_cached_at = time.time()
+            logger.info("Robots.txt loaded from cache for %s", domain)
+            return
+
+        ua = user_agent or USER_AGENT
         robots_url = f"https://{domain}/robots.txt"
 
         try:
@@ -108,7 +165,7 @@ class PolitenessManager:
             async with httpx.AsyncClient(
                 timeout=ROBOTS_TIMEOUT, follow_redirects=True
             ) as client:
-                resp = await client.get(robots_url, headers={"User-Agent": USER_AGENT})
+                resp = await client.get(robots_url, headers={"User-Agent": ua})
                 if resp.status_code == 200 and resp.text.strip():
                     self._parse_robots_txt(resp.text, state)
                     state.robots_cached_at = time.time()
@@ -125,17 +182,12 @@ class PolitenessManager:
         except Exception as e:
             logger.debug("Robots.txt fetch failed for %s: %s", domain, e)
 
-        # Fallback: try Valkey cache
-        cached = await self._robots_cache_load(domain)
-        if cached:
-            self._parse_robots_txt(cached, state)
-            state.robots_cached_at = time.time()
-            logger.info("Robots.txt loaded from cache for %s", domain)
-            return
-
         # No robots.txt available — assume all paths allowed
         state.robots_cached_at = time.time()
-        logger.info("No robots.txt for %s — assuming all paths allowed", domain)
+        logger.info(
+            "No robots.txt for %s — assuming all paths allowed (status!=200 or error)",
+            domain,
+        )
 
     def _parse_robots_txt(self, text: str, state: _DomainState) -> None:
         """Parse robots.txt content into disallowed path patterns.
@@ -170,10 +222,8 @@ class PolitenessManager:
 
             # Crawl-delay
             if line.lower().startswith("crawl-delay:"):
-                try:
+                with contextlib.suppress(ValueError):
                     crawl_delay = float(line.split(":", 1)[1].strip())
-                except ValueError:
-                    pass
 
             # Sitemap
             if line.lower().startswith("sitemap:"):
@@ -201,7 +251,7 @@ class PolitenessManager:
     async def _robots_cache_store(self, domain: str, text: str) -> None:
         """Store robots.txt content in Valkey cache."""
         try:
-            from .fetch import _get_cache_client
+            from .cache import _get_cache_client
 
             client = await _get_cache_client()
             if client:
@@ -213,7 +263,7 @@ class PolitenessManager:
     async def _robots_cache_load(self, domain: str) -> str | None:
         """Load robots.txt content from Valkey cache."""
         try:
-            from .fetch import _get_cache_client
+            from .cache import _get_cache_client
 
             client = await _get_cache_client()
             if client:
@@ -223,13 +273,70 @@ class PolitenessManager:
             pass
         return None
 
+    # ── Valkey distributed rate limit helpers ───────────────────
+
+    async def _get_valkey_last_request(self, domain: str) -> float:
+        """Get the last-request timestamp from Valkey for a domain.
+
+        Returns 0.0 if no Valkey entry exists or Valkey is unavailable.
+        """
+        try:
+            from .cache import _get_cache_client
+
+            client = await _get_cache_client()
+            if client:
+                key = self._rate_key(domain)
+                val = await client.get(key)
+                if val is not None:
+                    return float(val)
+        except Exception:
+            pass
+        return 0.0
+
+    async def _set_valkey_last_request(self, domain: str, timestamp: float) -> None:
+        """Set the last-request timestamp in Valkey for a domain.
+
+        Fail-open: if Valkey is unreachable, the rate limit falls back
+        to in-memory state only (VAL-CONC-020).
+        """
+        try:
+            from .cache import _get_cache_client
+
+            client = await _get_cache_client()
+            if client:
+                key = self._rate_key(domain)
+                await client.setex(key, self._rate_ttl, str(timestamp))
+        except Exception:
+            pass
+
     # ── Main check interface ────────────────────────────────────
 
-    async def check(self, url: str) -> PolitenessResult:
+    async def check(
+        self,
+        url: str,
+        ignore_robots_txt: bool = False,
+        robots_user_agent: str | None = None,
+    ) -> PolitenessResult:
         """Check whether a URL can be scraped under the current politeness policy.
 
-        Returns a PolitenessResult indicating proceed, delay (with seconds),
-        or blocked (with reason).
+        Acquires a per-domain asyncio Lock to provide atomicity for the
+        check → record cycle under concurrency (VAL-CONC-031, VAL-CONC-037).
+        Also coordinates with Valkey for distributed rate limiting across
+        instances (VAL-CONC-019).
+
+        When ``ignore_robots_txt`` is True, robots.txt disallow directives
+        are skipped, but per-domain rate limiting (crawl-delay) still
+        applies. This supports crawl-level ``ignoreRobotsTxt: true`` while
+        still respecting the domain's Crawl-delay.
+
+        Args:
+            url: The URL to check.
+            ignore_robots_txt: If True, skip robots.txt enforcement.
+            robots_user_agent: Custom User-Agent string for robots.txt
+                evaluation. If None, uses the default USER_AGENT.
+
+        Returns:
+            PolitenessResult with action "proceed", "delay", or "blocked".
         """
         if not self._enabled:
             return PolitenessResult(action="proceed", reason="politeness disabled")
@@ -238,48 +345,66 @@ class PolitenessManager:
         if not domain:
             return PolitenessResult(action="proceed", reason="no domain in URL")
 
-        state = self._domains.setdefault(domain, _DomainState())
+        # Acquire per-domain lock for atomic check → record
+        lock = self._get_domain_lock(domain)
+        async with lock:
+            state = self._domains.setdefault(domain, _DomainState())
 
-        # ── Ensure robots.txt is loaded ────────────────────────
-        if state.robots_cached_at == 0.0:
-            await self._fetch_and_parse_robots(domain)
+            # ── Ensure robots.txt is loaded ────────────────────────
+            if state.robots_cached_at == 0.0:
+                await self._fetch_and_parse_robots(domain, user_agent=robots_user_agent)
 
-        # ── Check robots.txt ──────────────────────────────────
-        from urllib.parse import urlparse
+            # ── Check robots.txt (skip if ignore_robots_txt) ──────
+            if not ignore_robots_txt:
+                from urllib.parse import urlparse
 
-        parsed = urlparse(url)
-        path = parsed.path or "/"
-        for pattern in state.robots_disallowed_paths:
-            if pattern.search(path):
-                logger.info(
-                    "Blocked by robots.txt: %s (disallowed path pattern: %s)",
-                    url,
-                    pattern.pattern,
+                parsed = urlparse(url)
+                path = parsed.path or "/"
+                for pattern in state.robots_disallowed_paths:
+                    if pattern.search(path):
+                        logger.info(
+                            "Blocked by robots.txt: %s (disallowed path pattern: %s)",
+                            url,
+                            pattern.pattern,
+                        )
+                        return PolitenessResult(
+                            action="blocked",
+                            reason=f"Disallowed by robots.txt: {pattern.pattern}",
+                            robots_allowed=False,
+                            domain=domain,
+                        )
+
+            # ── Rate limiting (Valkey-coordinated) ─────────────────
+            # Check both in-memory and Valkey last_request, use the most recent
+            in_memory_last = state.last_request
+            valkey_last = await self._get_valkey_last_request(domain)
+            effective_last = max(in_memory_last, valkey_last)
+
+            now = time.time()
+            elapsed = now - effective_last
+
+            if elapsed < state.crawl_delay and effective_last > 0:
+                wait = state.crawl_delay - elapsed
+                logger.debug(
+                    "Rate limiting %s: %.2fs elapsed, need %.2fs, waiting %.2fs",
+                    domain,
+                    elapsed,
+                    state.crawl_delay,
+                    wait,
                 )
                 return PolitenessResult(
-                    action="blocked",
-                    reason=f"Disallowed by robots.txt: {pattern.pattern}",
-                    robots_allowed=False,
+                    action="delay",
+                    delay_seconds=wait,
+                    reason=f"Rate limit: {wait:.1f}s remaining on {domain} "
+                    f"(delay={state.crawl_delay:.1f}s)",
                     domain=domain,
                 )
 
-        # ── Rate limiting ──────────────────────────────────────
-        elapsed = time.time() - state.last_request
-        if elapsed < state.crawl_delay and state.last_request > 0:
-            wait = state.crawl_delay - elapsed
-            logger.debug(
-                "Rate limiting %s: %.2fs elapsed, need %.2fs, waiting %.2fs",
-                domain,
-                elapsed,
-                state.crawl_delay,
-                wait,
-            )
-            return PolitenessResult(
-                action="delay",
-                delay_seconds=wait,
-                reason=f"Rate limit: {wait:.1f}s remaining on {domain} (delay={state.crawl_delay:.1f}s)",
-                domain=domain,
-            )
+            # ── Record this request atomically ─────────────────────
+            # Update both in-memory and Valkey state before releasing the
+            # lock so concurrent tasks see the updated timestamp.
+            state.last_request = now
+            await self._set_valkey_last_request(domain, now)
 
         return PolitenessResult(
             action="proceed",
@@ -294,6 +419,12 @@ class PolitenessManager:
         Called after a successful (or attempted) fetch so the rate
         limiter can track timing. Only meaningful when politeness is
         enabled.
+
+        Note: The check() method already records the request atomically
+        under the per-domain lock. This method is an additional safety
+        net for code paths that bypass check(). The in-memory update is
+        idempotent — it will set last_request to approximately the same
+        value that check() already set.
         """
         if not self._enabled:
             return

@@ -164,7 +164,11 @@ class TestLLMClientGenerate:
 
     @pytest.mark.asyncio
     async def test_thinking_enabled_via_env(self):
+        from agent.settings import load_settings as agent_load_settings
+
+        agent_load_settings.cache_clear()
         with patch.dict(os.environ, {"LLM_ENABLE_THINKING": "true"}, clear=False):
+            agent_load_settings.cache_clear()
             from agent.llm import LLMClient
 
             client = LLMClient(base_url="http://test/v1", api_key="k", model="ds")

@@ -27,7 +27,8 @@ services:
 
   search-svc:
     build:
-      context: ./search-svc
+      context: .
+      dockerfile: search-svc/Dockerfile
     restart: unless-stopped
     ports:
       - "8010:8010"
@@ -38,7 +39,8 @@ services:
 
   llm-svc:
     build:
-      context: ./llm-svc
+      context: .
+      dockerfile: llm-svc/Dockerfile
     restart: unless-stopped
     ports:
       - "8011:8011"
@@ -58,6 +60,20 @@ services:
       - ENABLE_MARKDOWN=1
       - ENABLE_DYNAMIC=1
       - SITE_NAME=Fixture Site
+
+  tier3-fixture:
+    build:
+      context: ./test-site
+    restart: unless-stopped
+    ports:
+      - "8006:8000"
+    profiles:
+      - fixture
+    environment:
+      - ENABLE_LLMS_TXT=0
+      - ENABLE_MARKDOWN=0
+      - ENABLE_DYNAMIC=1
+      - SITE_NAME=Tier 3 Fixture
 
   scraper-svc:
     build:
@@ -95,7 +111,8 @@ services:
 
   semantic-svc:
     build:
-      context: ./semantic-svc
+      context: .
+      dockerfile: semantic-svc/Dockerfile
     image: ghcr.io/groktopus/groktocrawl-semantic
     restart: unless-stopped
     ports:
@@ -108,9 +125,10 @@ services:
       - ACTIVE_EMBED_MODEL=${ACTIVE_EMBED_MODEL:-v_bge-m3}
 
   qdrant:
-    image: qdrant/qdrant:latest
+    image: qdrant/qdrant:v1.18.2
     platform: linux/amd64
     restart: unless-stopped
+    mem_limit: 4g
     volumes:
       - qdrant_data:/qdrant/storage
     environment:
@@ -154,7 +172,8 @@ services:
 
   portal-svc:
     build:
-      context: ./portal-svc
+      context: .
+      dockerfile: portal-svc/Dockerfile
     image: ghcr.io/groktopus/groktocrawl-portal
     restart: unless-stopped
     ports:
@@ -164,7 +183,8 @@ services:
 
   parse-svc:
     build:
-      context: ./parse-svc
+      context: .
+      dockerfile: parse-svc/Dockerfile
     restart: unless-stopped
 
 volumes:

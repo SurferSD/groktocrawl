@@ -6,9 +6,7 @@ Run inside the Docker network with:
 Requires the full stack: semantic-svc, qdrant.
 """
 
-import datetime
 import hashlib
-import json
 import os
 import time
 
@@ -38,6 +36,7 @@ def wait_for(url: str, path: str = "/health", timeout_s: int = 120):
 
 
 # ── Domain Classification ──────────────────────────────────────
+
 
 def test_domain_category_news():
     """News domains get 'news' category."""
@@ -143,6 +142,7 @@ def test_domain_category_unknown():
 
 # ── Crawl Count Tracking ───────────────────────────────────────
 
+
 def test_reindex_increments_crawl_count():
     """Re-indexing the same URL increments crawl_count."""
     url = "https://fixture.test/crawl-count-test"
@@ -173,6 +173,7 @@ def test_reindex_increments_crawl_count():
 
 
 # ── Access Tracking ────────────────────────────────────────────
+
 
 def test_search_tracks_access():
     """Searching for a page increments its access metadata."""
@@ -211,6 +212,7 @@ def test_search_tracks_access():
 
 # ── Eviction Priority ──────────────────────────────────────────
 
+
 def test_news_evicted_before_docs_on_capacity():
     """Under pressure, news pages should be evicted before docs pages.
 
@@ -229,6 +231,7 @@ def test_news_evicted_before_docs_on_capacity():
 
 
 # ── Index Stats ────────────────────────────────────────────────
+
 
 def test_index_stats_reports_correctly():
     """GET /index/stats returns total_docs and max_docs."""
@@ -274,7 +277,8 @@ def test_index_stats_reports_correctly():
 
 if __name__ == "__main__":
     tests = [
-        fn for name, fn in sorted(globals().items())
+        fn
+        for name, fn in sorted(globals().items())
         if name.startswith("test_") and callable(fn)
     ]
     passed = 0

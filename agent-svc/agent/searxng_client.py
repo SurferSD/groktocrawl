@@ -180,7 +180,7 @@ class SearXNGClient:
         try:
             resp = await self._client.get(
                 f"{self.base_url}/search",
-                params=params,
+                params=params,  # type: ignore[arg-type]
             )
             if resp.status_code != 200:
                 logger.warning(
@@ -216,5 +216,5 @@ class SearXNGClient:
             logger.error("SearXNG search failed: %s", e)
             return [], SearchHealth(detail=f"SearXNG search failed: {e}")
 
-    async def close(self):
+    async def close(self) -> None:
         await self._client.aclose()

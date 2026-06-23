@@ -11,6 +11,7 @@ updates:
       day: "monday"
       time: "09:00"
       timezone: "America/New_York"
+    minimum-release-age: "3 days"
     open-pull-requests-limit: 10
     labels:
       - "dependencies"
@@ -41,6 +42,7 @@ updates:
       day: "monday"
       time: "09:00"
       timezone: "America/New_York"
+    minimum-release-age: "3 days"
     open-pull-requests-limit: 10
     labels:
       - "dependencies"
@@ -56,6 +58,7 @@ updates:
       day: "monday"
       time: "09:00"
       timezone: "America/New_York"
+    minimum-release-age: "3 days"
     open-pull-requests-limit: 5
     labels:
       - "dependencies"
@@ -70,6 +73,7 @@ updates:
       day: "monday"
       time: "09:00"
       timezone: "America/New_York"
+    minimum-release-age: "3 days"
     open-pull-requests-limit: 5
     labels:
       - "dependencies"
@@ -84,6 +88,7 @@ updates:
       day: "monday"
       time: "09:00"
       timezone: "America/New_York"
+    minimum-release-age: "3 days"
     open-pull-requests-limit: 5
     labels:
       - "dependencies"
@@ -98,6 +103,7 @@ updates:
       day: "monday"
       time: "09:00"
       timezone: "America/New_York"
+    minimum-release-age: "3 days"
     open-pull-requests-limit: 5
     labels:
       - "dependencies"

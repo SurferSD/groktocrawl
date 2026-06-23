@@ -29,7 +29,7 @@ jobs:
     name: Validate ADR Structure
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Check ADR file naming convention
         run: |
@@ -96,7 +96,7 @@ jobs:
     name: Validate C4 Diagrams
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Check architecture.md exists
         run: |

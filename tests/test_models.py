@@ -81,7 +81,7 @@ class TestAgentRequest:
         from agent.models import AgentRequest
 
         with pytest.raises(ValidationError):
-            AgentRequest(prompt="x" * 10001)
+            AgentRequest(prompt="x" * 100001)
 
 
 class TestAgentCreateResponse:
@@ -203,6 +203,8 @@ class TestCrawlRequest:
         r = CrawlRequest(url="https://example.com")
         assert r.max_pages == 10
         assert r.max_depth == 2
+        assert r.regex_on_full_url is False
+        assert r.verbose is False
 
     def test_with_webhook(self):
         from agent.models import CrawlRequest
@@ -211,6 +213,70 @@ class TestCrawlRequest:
             url="https://x.com", webhook={"url": "https://hook.example.com"}
         )
         assert r.webhook["url"] == "https://hook.example.com"
+
+    def test_with_regex_on_full_url(self):
+        from agent.models import CrawlRequest
+
+        r = CrawlRequest(
+            url="https://example.com",
+            regex_on_full_url=True,
+            include_paths=[r"/section/.*"],
+        )
+        assert r.regex_on_full_url is True
+        assert r.include_paths == [r"/section/.*"]
+
+    def test_invalid_regex_raises_validation_error(self):
+        from agent.models import CrawlRequest
+
+        with pytest.raises(ValidationError) as excinfo:
+            CrawlRequest(
+                url="https://example.com",
+                regex_on_full_url=True,
+                include_paths=["[unclosed"],
+            )
+        err = str(excinfo.value)
+        assert "include_paths" in err
+        assert "unclosed" in err.lower() or "invalid" in err.lower()
+
+    def test_invalid_regex_in_exclude_paths_raises_error(self):
+        from agent.models import CrawlRequest
+
+        with pytest.raises(ValidationError) as excinfo:
+            CrawlRequest(
+                url="https://example.com",
+                regex_on_full_url=True,
+                exclude_paths=[r"[\w+", r"/valid/\d+"],
+            )
+        err = str(excinfo.value)
+        assert "exclude_paths" in err
+
+    def test_valid_regex_passes_validation(self):
+        from agent.models import CrawlRequest
+
+        r = CrawlRequest(
+            url="https://example.com",
+            regex_on_full_url=True,
+            include_paths=[r"/section/\d+", r"/blog/.*"],
+            exclude_paths=[r"/admin/.*"],
+        )
+        assert r.include_paths == [r"/section/\d+", r"/blog/.*"]
+        assert r.exclude_paths == [r"/admin/.*"]
+
+    def test_empty_include_paths_with_regex_is_valid(self):
+        from agent.models import CrawlRequest
+
+        r = CrawlRequest(
+            url="https://example.com",
+            regex_on_full_url=True,
+            include_paths=[],
+        )
+        assert r.include_paths == []
+
+    def test_verbose_flag(self):
+        from agent.models import CrawlRequest
+
+        r = CrawlRequest(url="https://example.com", verbose=True)
+        assert r.verbose is True
 
 
 class TestBatchScrapeRequest:

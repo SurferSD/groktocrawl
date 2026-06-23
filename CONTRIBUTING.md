@@ -37,8 +37,10 @@ Open a GitHub issue with:
 ```bash
 # From the repo root:
 cp .env.sample .env
-docker compose up --build -d
-docker compose exec agent-svc python3 /app/agent/tests/test_stack.py
+docker compose --profile fixture up --build -d
+docker compose exec -T agent-svc mkdir -p /app/tests
+docker cp tests/test_stack.py $(docker compose ps -q agent-svc):/app/tests/test_stack.py
+docker compose exec -T agent-svc python3 /app/tests/test_stack.py
 ```
 
 All tests must pass before a PR is merged.
@@ -51,11 +53,13 @@ You need Docker and Docker Compose. No other dependencies are required — every
 git clone https://github.com/your-username/groktocrawl
 cd groktocrawl
 cp .env.sample .env
-docker compose up --build -d
+docker compose --profile fixture up --build -d
 
 # Verify health
 curl http://localhost:8080/health
 ```
+
+The `--profile fixture` flag starts test helper services (`llm-svc` for a built-in LLM, `test-site` for integration tests). For production you'd omit it and configure a real LLM in `.env`.
 
 ## Coding Conventions
 
@@ -69,8 +73,11 @@ curl http://localhost:8080/health
 ## Project Layout
 
 - `agent-svc/` — the main API service (FastAPI + research worker)
-- `scraper-svc/` — URL-to-markdown conversion service
-- `search-svc/` — search fixture for local testing (replaceable with SearXNG)
+- `scraper-svc/` — URL-to-markdown conversion service (three-tier fetch: llms.txt → content-negotiation → Playwright)
+- `browser-svc/` — headless Playwright browser sessions
+- `semantic-svc/` — vector indexing and near-duplicate detection (Qdrant)
+- `portal-svc/` — web UI for human users
+- `search-svc/` — search fixture for local testing (replaceable with SearXNG or SlopSearX)
 - `llm-svc/` — LLM fixture for local testing (replaceable with any OpenAI-compatible backend)
 - `test-site/` — fixture website for integration tests
 - `tests/` — integration tests
