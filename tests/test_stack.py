@@ -138,7 +138,7 @@ def test_metrics_endpoint_returns_openmetrics():
 
 def test_scraper_uses_llms_txt():
     r = httpx.post(
-        SCRAPER + "/scrape", json={"url": TEST_SITE + "/anything"}, timeout=120
+        SCRAPER + "/scrape", json={"url": TEST_SITE + "/about"}, timeout=120
     )
     payload = r.json()
     assert payload["success"] is True
@@ -147,9 +147,7 @@ def test_scraper_uses_llms_txt():
 
 
 def test_scraper_uses_accept_markdown():
-    # Disable llms.txt by targeting the pricing page on a site that still has it.
-    # The scraper should still prefer llms.txt if root exists, so use a distinct host
-    # behavior by checking the content result from the pricing page through the site root.
+    # Disable llms.txt by targeting a page that doesn't match the llms.txt listing.
     r = httpx.post(
         SCRAPER + "/scrape", json={"url": TEST_SITE + "/pricing"}, timeout=120
     )
@@ -1476,7 +1474,7 @@ def test_scrape_with_contents_extras():
     r = httpx.post(
         SCRAPER + "/scrape",
         json={
-            "url": TEST_SITE + "/anything",
+            "url": TEST_SITE + "/about",
             "contents": {"extras": {"links": 5, "imageLinks": 3, "codeBlocks": 2}},
         },
         timeout=120,
@@ -1493,7 +1491,7 @@ def test_scrape_with_contents_compact_verbosity():
     r = httpx.post(
         SCRAPER + "/scrape",
         json={
-            "url": TEST_SITE + "/anything",
+            "url": TEST_SITE + "/about",
             "contents": {"text": {"verbosity": "compact"}},
         },
         timeout=120,
@@ -1582,7 +1580,7 @@ def test_scrape_contents_default_unchanged():
     """POST /scrape without contents should return same structure as before."""
     r_no_contents = httpx.post(
         SCRAPER + "/scrape",
-        json={"url": TEST_SITE + "/anything"},
+        json={"url": TEST_SITE + "/about"},
         timeout=120,
     )
     payload = r_no_contents.json()
