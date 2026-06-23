@@ -14,6 +14,9 @@ graphify-out/
 docker-compose.override.yml
 ofelia/config.local.ini
 
+# Local skill directories (prevent environment leaks)
+skills/
+
 # OS files
 .DS_Store
 Thumbs.db
