@@ -1598,4 +1598,3 @@ async def _index_scrape(url: str, title: str, content: str, request: Request) ->
     finally:
         if semantic is not None:
             await semantic.close()
-
