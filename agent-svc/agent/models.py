@@ -1,5 +1,6 @@
 """Pydantic models matching the Firecrawl v2 agent API contract."""
 
+from enum import Enum
 from typing import Any
 from urllib.parse import urlparse
 
@@ -39,6 +40,35 @@ VALID_SCRAPE_PROXY_VALUES: frozenset[str] = frozenset(
         "auto",
     }
 )
+
+
+class VerbosityLevel(str, Enum):
+    compact = "compact"       # ~300 chars of body text
+    standard = "standard"     # Current behavior (readability extraction)
+    full = "full"             # Complete page text including structural markup
+
+
+class SectionCategory(str, Enum):
+    header = "header"
+    navigation = "navigation"
+    banner = "banner"
+    body = "body"
+    sidebar = "sidebar"
+    footer = "footer"
+    metadata = "metadata"
+
+
+class ExtrasOptions(BaseModel):
+    links: int | None = None        # Max external links to extract
+    imageLinks: int | None = None   # Max image URLs to extract
+    codeBlocks: int | None = None   # Max code blocks to extract
+
+
+class ContentsOptions(BaseModel):
+    text: bool | dict | None = None          # True = full text, or dict with verbosity/sections
+    highlights: bool | dict | None = None    # True = auto highlights, or dict with query/maxCharacters
+    summary: bool | dict | None = None       # True = auto summary, or dict with query/maxTokens
+    extras: ExtrasOptions | None = None
 
 
 class ErrorDetail(BaseModel):
@@ -677,12 +707,18 @@ class SearchRequest(BaseModel):
     sources: list[str] | None = None
     output_schema: dict[str, Any] | None = None  # JSON Schema for structured extraction
     system_prompt: str | None = None  # Guidance for synthesis
+    contents: ContentsOptions | None = None  # Content extraction options
 
 
 class SearchResult(BaseModel):
     url: str
     title: str
     description: str = ""
+    # ── Content extraction fields (populated when contents in SearchRequest) ──
+    highlights: str | None = None    # LLM-extracted relevant passages
+    summary: str | None = None       # LLM-generated summary
+    extras: dict | None = None       # Links, images, code blocks from scraper
+    markdown: str | None = None      # Full scraped markdown when contents requested
 
 
 class SearchResponse(BaseModel):

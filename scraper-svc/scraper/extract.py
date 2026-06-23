@@ -4,6 +4,7 @@ Runs after readability/markdownify conversion. Returns a quality score (0.0–1.
 and structured breakdown. Non-blocking — consumers set their own tolerance.
 """
 
+import contextlib
 import logging
 import re
 from dataclasses import dataclass
@@ -279,3 +280,233 @@ def assess_quality(
         },
         "detail": ", ".join(details) if details else "all checks passed",
     }
+
+
+# ── Section filtering ──────────────────────────────────────────
+
+# HTML5 semantic section elements mapped to categories
+_SECTION_TAG_MAP: dict[str, str] = {
+    "header": "header",
+    "nav": "navigation",
+    "main": "body",
+    "article": "body",
+    "section": "body",
+    "aside": "sidebar",
+    "footer": "footer",
+}
+
+# Tags that represent banner-type content
+_BANNER_TAGS = {
+    "div[role=banner]",
+    "div.banner",
+    "div.hero",
+}
+
+
+def filter_sections(
+    html: str,
+    include: list[str] | None = None,
+    exclude: list[str] | None = None,
+    verbosity: str = "standard",
+) -> str:
+    """Filter page sections by category and control verbosity of output.
+
+    Parses HTML with BeautifulSoup, identifies semantic sections, and
+    applies include/exclude filters before converting to markdown.
+
+    Args:
+        html: Raw HTML string from the page.
+        include: Section categories to keep (all others stripped).
+        exclude: Section categories to strip (all others kept).
+        verbosity: Output verbosity — "compact", "standard", or "full".
+
+    Returns:
+        Markdown string with filtering applied, or the original HTML
+        converted via readability extraction (standard verbosity, no filters).
+    """
+    try:
+        from bs4 import BeautifulSoup, Tag
+    except ImportError:
+        logger.warning("BeautifulSoup not available for section filtering")
+        return html
+
+    if not html or not html.strip():
+        return ""
+
+    soup = BeautifulSoup(html, "html.parser")
+
+    # ── Identify sections ──────────────────────────────────────
+    # Build a list of (category, element) tuples
+    sections: list[tuple[str, Tag]] = []
+    seen_elements: set[int] = set()
+
+    for tag_name, category in _SECTION_TAG_MAP.items():
+        for elem in soup.find_all(tag_name):
+            elem_id = id(elem)
+            if elem_id not in seen_elements:
+                sections.append((category, elem))
+                seen_elements.add(elem_id)
+
+    # Also identify banner elements
+    for css_selector in _BANNER_TAGS:
+        tag_part, _, class_or_attr = css_selector.partition(".")
+        if class_or_attr and class_or_attr.startswith("class="):
+            cls = class_or_attr[6:]
+            for elem in soup.find_all(tag_part, class_=cls):
+                elem_id = id(elem)
+                if elem_id not in seen_elements:
+                    sections.append(("banner", elem))
+                    seen_elements.add(elem_id)
+        elif class_or_attr:
+            cls = class_or_attr
+            for elem in soup.find_all(tag_part, class_=cls):
+                elem_id = id(elem)
+                if elem_id not in seen_elements:
+                    sections.append(("banner", elem))
+                    seen_elements.add(elem_id)
+
+    # If no semantic sections found, treat entire body as "body"
+    if not sections:
+        body = soup.find("body")
+        if body:
+            sections = [("body", body)]
+
+    # ── Apply include/exclude filters ───────────────────────────
+    if include:
+        included_categories = set(include)
+        for category, elem in sections:
+            if category not in included_categories:
+                elem.decompose()
+
+    if exclude:
+        excluded_categories = set(exclude)
+        for category, elem in sections:
+            if category in excluded_categories:
+                elem.decompose()
+
+    # ── Verbosity ───────────────────────────────────────────────
+    if verbosity == "compact":
+        # Extract text from remaining body content, return first ~300 chars
+        body_text = soup.get_text(separator="\n", strip=True)
+        compact = body_text[:300].strip()
+        if len(body_text) > 300:
+            compact += "\n..."
+        return compact
+
+    if verbosity == "full":
+        # Render full page as markdown, preserving structural markup
+        try:
+            from markdownify import markdownify as md
+
+            # Remove script and style before markdown conversion
+            for tag in soup(["script", "style"]):
+                tag.decompose()
+            return md(str(soup), heading_style="ATX", strip=[]).strip()
+        except ImportError:
+            logger.warning("markdownify not available for full verbosity")
+            return soup.get_text(separator="\n", strip=True)
+
+    # Standard: use readability extraction on the (possibly filtered) HTML
+    try:
+        from markdownify import markdownify as md
+        from readability import Document
+
+        doc = Document(str(soup))
+        summary = doc.summary()
+        markdown = md(summary, heading_style="ATX", strip=["script", "style"])
+        markdown = re.sub(r"\n{3,}", "\n\n", markdown)
+        return markdown.strip()
+    except Exception:
+        return soup.get_text(separator="\n", strip=True)
+
+
+# ── Extras extraction ──────────────────────────────────────────
+
+def extract_extras(html: str, options) -> dict:
+    """Extract links, images, and code blocks from raw HTML.
+
+    Args:
+        html: Raw HTML string from the page.
+        options: ExtrasOptions with max counts for links, imageLinks, codeBlocks.
+                 Only keys present in options are included in the output.
+
+    Returns:
+        Dict with extracted extras — only keys that were requested appear.
+        Example: {"links": [...], "codeBlocks": [...]}
+    """
+    try:
+        from urllib.parse import urljoin
+
+        from bs4 import BeautifulSoup
+    except ImportError:
+        logger.warning("BeautifulSoup not available for extras extraction")
+        return {}
+
+    if not html or not html.strip():
+        return {}
+
+    soup = BeautifulSoup(html, "html.parser")
+    result: dict = {}
+
+    # Determine the page's base URL for resolving relative links
+    base_tag = soup.find("base", href=True)
+    base_url = base_tag["href"] if base_tag else ""
+
+    # ── External links ─────────────────────────────────────────
+    if options.links is not None and options.links > 0:
+        links: list[str] = []
+        for a in soup.find_all("a", href=True):
+            href = a["href"].strip()
+            # Skip non-web links
+            if href.startswith(("mailto:", "javascript:", "tel:", "#")):
+                continue
+            # Resolve relative URLs against base
+            resolved = href
+            if base_url:
+                with contextlib.suppress(Exception):
+                    resolved = urljoin(base_url, href)
+            # Deduplicate
+            if resolved not in links:
+                links.append(resolved)
+            if len(links) >= options.links:
+                break
+        result["links"] = links
+
+    # ── Image links ────────────────────────────────────────────
+    if options.imageLinks is not None and options.imageLinks > 0:
+        images: list[str] = []
+        for img in soup.find_all("img", src=True):
+            src = img["src"].strip()
+            if not src or src.startswith("data:"):
+                continue
+            if src not in images:
+                images.append(src)
+            if len(images) >= options.imageLinks:
+                break
+        result["imageLinks"] = images
+
+    # ── Code blocks ────────────────────────────────────────────
+    if options.codeBlocks is not None and options.codeBlocks > 0:
+        blocks: list[str] = []
+        # <pre><code> blocks first
+        for pre in soup.find_all("pre"):
+            code = pre.find("code")
+            text = code.get_text() if code else pre.get_text()
+            text = text.strip()
+            if text and text not in blocks:
+                blocks.append(text)
+            if len(blocks) >= options.codeBlocks:
+                break
+        # Fallback: standalone <code> blocks (not inside <pre>)
+        if len(blocks) < options.codeBlocks:
+            for code in soup.find_all("code"):
+                if code.parent and code.parent.name == "pre":
+                    continue  # already captured above
+                text = code.get_text().strip()
+                if text and text not in blocks:
+                    blocks.append(text)
+                if len(blocks) >= options.codeBlocks:
+                    break
+        result["codeBlocks"] = blocks
+
+    return result

@@ -1044,6 +1044,48 @@ async def search(request: Request, body: SearchRequest) -> SearchResponse:
                 llm_model=request.app.state.llm_model,
             )
 
+        # ── Contents options: per-result highlights, summary, extras ──
+        if body.contents:
+            from .llm import LLMClient
+            from .research import process_contents_for_results
+            from .scraper_client import ScraperClient
+
+            llm_client = LLMClient(
+                request.app.state.llm_base_url,
+                request.app.state.llm_api_key,
+                request.app.state.llm_model,
+            )
+            scraper_client = ScraperClient(request.app.state.scraper_url)
+            try:
+                # Build result dicts from current search_results
+                result_dicts = [
+                    {"url": r.url, "title": r.title, "description": r.description}
+                    for r in search_results
+                ]
+                enriched = await process_contents_for_results(
+                    result_dicts,
+                    body.query,
+                    body.contents,
+                    llm_client,
+                    scraper_client,
+                )
+                # Update search_results with enriched data
+                search_results = [
+                    SearchResult(
+                        url=r["url"],
+                        title=r["title"],
+                        description=r.get("description", ""),
+                        highlights=r.get("highlights"),
+                        summary=r.get("summary"),
+                        extras=r.get("extras"),
+                        markdown=r.get("markdown"),
+                    )
+                    for r in enriched
+                ]
+            finally:
+                await llm_client.close()
+                await scraper_client.close()
+
         return SearchResponse(data=data, output=output)
     finally:
         await searxng.close()

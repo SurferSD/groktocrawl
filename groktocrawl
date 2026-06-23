@@ -28,7 +28,9 @@ Global flags:
 
 Examples:
   groktocrawl scrape https://example.com
+  groktocrawl scrape https://example.com --contents '{"extras":{"links":5}}'
   groktocrawl search "raspberry pi 5" --limit 5 --json
+  groktocrawl search "rust programming" --search-type rich --contents '{"highlights":{"maxCharacters":300}}'
   groktocrawl map https://docs.example.com --limit 50
   groktocrawl crawl https://docs.example.com --max-depth 2 --limit 20
   groktocrawl agent "What are the key announcements from Google I/O 2025?"  (streaming, default)
@@ -502,6 +504,7 @@ class Client:
         search_type: str = "fast",
         output_schema: dict | None = None,
         system_prompt: str | None = None,
+        contents: dict | None = None,
     ) -> dict[str, Any]:
         data: dict[str, Any] = {
             "query": query,
@@ -518,6 +521,8 @@ class Client:
             data["output_schema"] = output_schema
         if system_prompt:
             data["system_prompt"] = system_prompt
+        if contents:
+            data["contents"] = contents
         return self._request("POST", "/search", json_data=data)
 
     def map_urls(
@@ -715,11 +720,21 @@ def cmd_scrape(client: Client, args: argparse.Namespace) -> None:
         return
 
     try:
+        # Parse contents from JSON string or file
+        contents = None
+        if args.contents:
+            if args.contents.startswith("@"):
+                with open(args.contents[1:]) as f:
+                    contents = json.loads(f.read())
+            else:
+                contents = json.loads(args.contents)
+
         result = client.scrape(
             url=args.url,
             formats=args.format,
             only_main_content=args.only_main_content,
             timeout=args.timeout,
+            contents=contents,
         )
     except ApiError as e:
         die(str(e))
@@ -764,6 +779,18 @@ def cmd_search(client: Client, args: argparse.Namespace) -> None:
             except (json.JSONDecodeError, FileNotFoundError) as e:
                 die(f"Invalid output_schema: {e}")
 
+        # Parse contents from JSON string or file
+        contents = None
+        if args.contents:
+            try:
+                if args.contents.startswith("@"):
+                    with open(args.contents[1:]) as f:
+                        contents = json.loads(f.read())
+                else:
+                    contents = json.loads(args.contents)
+            except (json.JSONDecodeError, FileNotFoundError) as e:
+                die(f"Invalid contents: {e}")
+
         result = client.search(
             query=args.query,
             limit=args.limit,
@@ -773,6 +800,7 @@ def cmd_search(client: Client, args: argparse.Namespace) -> None:
             search_type=args.search_type,
             output_schema=output_schema,
             system_prompt=args.system_prompt,
+            contents=contents,
         )
     except ApiError as e:
         die(str(e))
@@ -1713,7 +1741,12 @@ def make_parser() -> argparse.ArgumentParser:
         help="Include navigation, sidebars, etc.",
     )
     p_scrape.add_argument(
-        "--timeout", type=int, default=60000, help="Request timeout in ms"
+        "--timeout", type=int, default=30000, help="Timeout in ms (default: 30000)"
+    )
+    p_scrape.add_argument(
+        "--contents",
+        help="Content extraction options as JSON string or @file.json. "
+             'Example: \'{"extras":{"links":5}}\'',
     )
     p_scrape.add_argument(
         "-o", "--output", help="Write output to file instead of stdout"
@@ -1753,6 +1786,11 @@ def make_parser() -> argparse.ArgumentParser:
     p_search.add_argument(
         "--system-prompt",
         help="Guidance for synthesis (e.g., 'Prefer official sources')",
+    )
+    p_search.add_argument(
+        "--contents",
+        help="Content extraction options as JSON string or @file.json. "
+             'Example: \'{"highlights":{"maxCharacters":300}}\'',
     )
 
     p_map = subparsers.add_parser("map", help="Discover URLs on a site")
