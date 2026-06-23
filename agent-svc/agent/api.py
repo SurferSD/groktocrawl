@@ -1010,7 +1010,7 @@ async def search(request: Request, body: SearchRequest) -> SearchResponse:
                 await scraper.close()
 
         # Route results to the correct top-level key based on sources filter
-        data: dict[str, list] = {"web": [], "images": [], "news": []}
+        data = {"web": [], "images": [], "news": []}
         if body.sources:
             for src in body.sources:
                 if src in data:
