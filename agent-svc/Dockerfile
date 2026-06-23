@@ -2,7 +2,7 @@ FROM python:3.13-slim
 
 WORKDIR /app
 COPY agent-svc/pyproject.toml .
-RUN pip install --no-cache-dir -e ".[test]"
+RUN pip install --no-cache-dir -e .
 
 COPY agent-svc/agent/ agent/
 COPY common/ common/

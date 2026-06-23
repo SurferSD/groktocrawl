@@ -3,16 +3,10 @@
 # Builds and publishes Docker images for GroktoCrawl services to ghcr.io.
 # Uses a build matrix with capped parallelism to avoid runner resource exhaustion.
 #
-# Performance optimizations:
-#   - PRs push images to ghcr.io with PR tags → integration tests pull instead of rebuild
-#   - QEMU removed (no ARM targets in build matrix)
-#   - Health checks consolidated into single parallel step
-#   - Path-filtered PR triggers skip docs-only changes
-#
 # Tags:
-#   - main branch → latest, unstable, SHA
-#   - PR branch    → pr-N (used by integration tests to avoid double-build)
-#   - vX.Y.Z tag   → stable, X, X.Y, X.Y.Z
+#   - main branch → latest, unstable
+#   - vX.Y.Z tag  → stable, X, X.Y, X.Y.Z
+#   - PR to main  → build-only (no push)
 
 name: Docker Build & Publish
 
@@ -22,12 +16,6 @@ on:
     tags: ["v*"]
   pull_request:
     branches: [main]
-    paths-ignore:
-      - "docs/**"
-      - "**.md"
-      - "skills/**"
-      - ".github/**"
-      - '!.github/workflows/docker.yml'
 
 env:
   REGISTRY: ghcr.io
@@ -69,6 +57,9 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
@@ -88,8 +79,6 @@ jobs:
             type=raw,value=latest,enable=${{ github.ref_name == 'main' }}
             type=raw,value=unstable,enable=${{ github.ref_name == 'main' }}
             type=raw,value=stable,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
-            type=raw,value=${{ github.sha }},enable=true
-            type=ref,event=pr,enable=${{ github.event_name == 'pull_request' }}
             type=semver,pattern={{major}},enable=${{ startsWith(github.ref, 'refs/tags/v') }}
             type=semver,pattern={{major}}.{{minor}},enable=${{ startsWith(github.ref, 'refs/tags/v') }}
             type=semver,pattern={{major}}.{{minor}}.{{patch}},enable=${{ startsWith(github.ref, 'refs/tags/v') }}
@@ -104,7 +93,7 @@ jobs:
         with:
           context: ${{ matrix.context }}
           file: ${{ matrix.dockerfile }}
-          push: ${{ github.event_name == 'push' || github.event_name == 'pull_request' }}
+          push: ${{ github.event_name == 'push' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           build-args: HF_TOKEN=${{ secrets.HF_TOKEN }}
@@ -133,8 +122,6 @@ jobs:
     name: Integration Tests
     needs: build-and-push
     runs-on: [self-hosted, groktopus, docker]
-    permissions:
-      packages: read
     steps:
       - uses: actions/checkout@v7
 
@@ -150,72 +137,56 @@ jobs:
       - name: Clean up stale containers from previous run
         run: docker compose down --remove-orphans --timeout 30 || true
 
-      - name: Log in to GitHub Container Registry
-        uses: docker/login-action@v3
-        with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Pull pre-built images from ghcr.io
-        run: |
-          if [ "${{ github.event_name }}" = "pull_request" ]; then
-            TAG="pr-${{ github.event.pull_request.number }}"
-          else
-            TAG="${{ github.sha }}"
-          fi
-          echo "Using image tag: $TAG"
-
-          SERVICES="agent-svc scraper-svc browser-svc semantic-svc portal-svc"
-          for svc in $SERVICES; do
-            IMAGE="ghcr.io/groktopus/groktocrawl-$svc"
-            echo "Pulling $IMAGE:$TAG"
-            docker pull "$IMAGE:$TAG"
-            # Retag as the image name so docker compose finds it without --build
-            docker tag "$IMAGE:$TAG" "$IMAGE:latest"
-          done
-
-      - name: Start the Docker stack (pre-built images, no rebuild)
-        run: docker compose up -d
-        timeout-minutes: 5
+      - name: Start the Docker stack
+        run: docker compose up --build -d
+        timeout-minutes: 10
 
       - name: Start test fixtures
         run: docker compose --profile fixture up --build -d llm-svc tier3-fixture test-site
         timeout-minutes: 5
 
-      - name: Wait for all services to be healthy
+      - name: Wait for services to be healthy
         run: |
           python3 -c "
-          import concurrent.futures, time, urllib.request, urllib.error, subprocess
+          import time, urllib.request
+          deadline = time.time() + 180
+          while time.time() < deadline:
+              try:
+                  r = urllib.request.urlopen('http://localhost:8080/health', timeout=5)
+                  if r.status == 200:
+                      print('Stack healthy')
+                      break
+              except Exception:
+                  pass
+              time.sleep(3)
+          else:
+              raise RuntimeError('Timed out waiting for stack')
+          "
 
-          services = {
-              'agent-svc':      ('http://localhost:8080/health', 180),
-              'semantic-svc':   ('http://localhost:8003/health', 120),
-              'tier3-fixture':  ('http://localhost:8006/health',  60),
-              'test-site':      ('http://localhost:8005/health',  60),
-          }
-
-          def wait_service(name, url, timeout_s):
-              deadline = time.time() + timeout_s
-              while time.time() < deadline:
-                  try:
-                      r = urllib.request.urlopen(url, timeout=5)
-                      if r.status == 200:
-                          return f'{name} healthy'
-                  except urllib.error.HTTPError as e:
-                      pass
-                  except Exception:
-                      pass
-                  time.sleep(2)
-              raise RuntimeError(f'Timed out waiting for {name} at {url} ({timeout_s}s)')
-
-          with concurrent.futures.ThreadPoolExecutor(max_workers=4) as ex:
-              futures = {ex.submit(wait_service, name, url, to): name for name, (url, to) in services.items()}
-              for future in concurrent.futures.as_completed(futures):
-                  print(future.result())
-
+      - name: Wait for semantic-svc
+        run: |
+          # First check from host that the API is alive
+          python3 -c "
+          import time, urllib.request, urllib.error
+          deadline = time.time() + 120
+          while time.time() < deadline:
+              try:
+                  r = urllib.request.urlopen('http://localhost:8003/health', timeout=5)
+                  data = r.read().decode()
+                  if r.status == 200 and '\"ok\"' in data:
+                      print('semantic-svc healthy on host')
+                      break
+              except urllib.error.HTTPError as e:
+                  print(f'  waiting ({e.code})...')
+              except Exception:
+                  pass
+              time.sleep(3)
+          else:
+              raise RuntimeError('Timed out waiting for semantic-svc on host')
+          "
           # Verify Qdrant is reachable from inside agent-svc (where tests run)
-          print('Verifying Qdrant connectivity from agent-svc...')
+          python3 -c "
+          import time, subprocess
           deadline = time.time() + 60
           while time.time() < deadline:
               r = subprocess.run(
@@ -225,18 +196,58 @@ jobs:
                   capture_output=True, text=True, timeout=10
               )
               if r.returncode == 0 and '200' in r.stdout:
-                  print('Qdrant reachable from agent-svc')
+                  print(f'Qdrant ready from agent-svc')
                   break
-              time.sleep(4)
+              print(f'  waiting from agent-svc (rc={r.returncode}): {r.stdout[:80]}')
+              time.sleep(5)
           else:
               raise RuntimeError('Timed out waiting for Qdrant from agent-svc')
+          "
+
+      - name: Wait for tier3-fixture
+        run: |
+          python3 -c "
+          import time, urllib.request
+          deadline = time.time() + 30
+          while time.time() < deadline:
+              try:
+                  r = urllib.request.urlopen('http://localhost:8006/health', timeout=5)
+                  if r.status == 200:
+                      print('tier3-fixture healthy')
+                      break
+              except Exception:
+                  pass
+              time.sleep(2)
+          else:
+              raise RuntimeError('Timed out waiting for tier3-fixture')
+          "
+
+      - name: Wait for test-site
+        run: |
+          python3 -c "
+          import time, urllib.request
+          deadline = time.time() + 60
+          while time.time() < deadline:
+              try:
+                  r = urllib.request.urlopen('http://localhost:8005/health', timeout=5)
+                  if r.status == 200:
+                      print('test-site healthy')
+                      break
+              except Exception:
+                  pass
+              time.sleep(2)
+          else:
+              raise RuntimeError('Timed out waiting for test-site')
           "
 
       - name: Copy test files and source directories
         run: |
           svc=$(docker compose ps -q agent-svc)
+          # Copy full tests/ directory
           docker compose exec -T agent-svc mkdir -p /app/tests
           docker cp tests/. "$svc":/app/tests/
+          # Copy service source packages so tests can import them
+          # Each package_dir (e.g. scraper-svc/scraper) becomes /app/<package_dir>/
           for pkg in agent-svc/agent scraper-svc/scraper parse-svc/parse_svc portal-svc/portal browser-svc/browser_svc search-svc/search_svc llm-svc/llm_svc; do
             docker compose exec -T agent-svc mkdir -p "/app/$pkg"
             docker cp "$pkg/." "$svc:/app/$pkg/"
@@ -244,6 +255,7 @@ jobs:
 
       - name: Run integration tests
         run: |
+          docker compose exec -T agent-svc pip install pytest pytest-asyncio pytest-timeout jinja2 python-docx python-pptx openpyxl tabulate -q
           docker compose exec -T \
             -e PYTHONPATH=/app/agent-svc:/app/scraper-svc:/app/search-svc:/app/llm-svc:/app/parse-svc:/app/portal-svc:/app/browser-svc:/app \
             -e SCRAPER_BASE_URL=http://scraper-svc:8001 \
