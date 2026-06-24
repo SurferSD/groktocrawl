@@ -1466,21 +1466,6 @@ async def create_monitor(body: MonitorCreateRequest) -> MonitorResponse:
             webhook=body.webhook,
             created_at=now,
         )
-    config = {
-        "url": body.url,
-        "schedule": body.schedule,
-        "webhook": body.webhook,
-        "created_at": datetime.now(UTC).isoformat(),
-        "last_content": "",
-    }
-    save_monitor(monitor_id, config)
-    return MonitorResponse(
-        id=monitor_id,
-        url=body.url,
-        schedule=body.schedule,
-        webhook=body.webhook,
-        created_at=config["created_at"],  # type: ignore[arg-type]
-    )
 
 
 @router.get("/v2/monitor", response_model=MonitorListResponse)
@@ -1548,15 +1533,6 @@ async def get_monitor_status(monitor_id: str) -> MonitorResponse:
             last_result=cfg.get("last_result"),
             created_at=cfg.get("created_at", ""),
         )
-    return MonitorResponse(
-        id=monitor_id,
-        url=cfg.get("url", ""),
-        schedule=cfg.get("schedule", ""),
-        webhook=cfg.get("webhook"),
-        last_checked=cfg.get("last_checked"),
-        last_result=cfg.get("last_result"),
-        created_at=cfg.get("created_at") or "",  # type: ignore[arg-type]
-    )
 
 
 @router.patch("/v2/monitor/{monitor_id}", response_model=MonitorResponse)
@@ -1600,15 +1576,6 @@ async def update_monitor(
             last_result=cfg.get("last_result"),
             created_at=cfg.get("created_at", ""),
         )
-    return MonitorResponse(
-        id=monitor_id,
-        url=cfg.get("url", ""),
-        schedule=cfg.get("schedule", ""),
-        webhook=cfg.get("webhook"),
-        last_checked=cfg.get("last_checked"),
-        last_result=cfg.get("last_result"),
-        created_at=cfg.get("created_at") or "",  # type: ignore[arg-type]
-    )
 
 
 @router.delete("/v2/monitor/{monitor_id}", response_model=MonitorDeleteResponse)
