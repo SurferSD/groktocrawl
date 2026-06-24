@@ -4,6 +4,7 @@ from enum import Enum
 from typing import Any
 from urllib.parse import urlparse
 
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from pydantic.alias_generators import to_camel
 
@@ -737,7 +738,7 @@ class FindSimilarRequest(BaseModel):
 
 class FindSimilarResponse(BaseModel):
     success: bool = True
-    data: list[SearchResult]
+    data: list[dict]
     query_url: str
     search_mode: str
     latency_ms: float
@@ -820,24 +821,56 @@ class ExtractStatusResponse(BaseModel):
     expires_at: str | None = None
 
 
+class SearchMonitorConfig(BaseModel):
+    """Configuration for search-based monitors."""
+
+    query: str = Field(..., description="Search query to monitor")
+    sources: list[str] | None = Field(None, description="Source types (web, news, images, video, social)")
+    categories: list[str] | None = Field(None, description="Content categories (research, github, pdf, news, science, it)")
+    numResults: int = Field(default=10, ge=1, le=50, description="Max results per check")
+
+
 class MonitorCreateRequest(BaseModel):
-    url: str = Field(..., description="URL to monitor for changes")
+    url: str | None = Field(None, description="URL to monitor (scrape type)")
     schedule: str = Field(
         default="0 */6 * * *", description="Cron expression for check frequency"
     )
     webhook: str | None = Field(None, description="Webhook URL called on change")
+    monitor_type: str = Field(
+        default="scrape", description="Monitor type: 'scrape' or 'search'"
+    )
+    search_config: SearchMonitorConfig | None = Field(
+        None, description="Search monitor configuration (required for search type)"
+    )
+
+    @model_validator(mode="after")
+    def validate_monitor_type_fields(self):
+        if self.monitor_type == "search":
+            if self.search_config is None or not self.search_config.query:
+                raise ValueError(
+                    "search_config with a non-empty query is required for monitor_type='search'"
+                )
+        elif self.monitor_type == "scrape":
+            if not self.url:
+                raise ValueError("url is required for monitor_type='scrape'")
+        else:
+            raise ValueError(f"Unknown monitor_type: '{self.monitor_type}'. Must be 'scrape' or 'search'")
+        return self
 
 
 class MonitorUpdateRequest(BaseModel):
     url: str | None = None
     schedule: str | None = None
     webhook: str | None = None
+    search_config: SearchMonitorConfig | None = None
 
 
 class MonitorResponse(BaseModel):
     success: bool = True
     id: str
-    url: str
+    monitor_type: str = "scrape"
+    url: str | None = None
+    search_config: dict | None = None
     schedule: str
     webhook: str | None = None
     last_checked: str | None = None

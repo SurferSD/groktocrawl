@@ -236,7 +236,7 @@ async def create_agent(request: Request, body: AgentRequest, response: Response)
             "X-Search-Budget": f"{max_searches}/{max_searches}",
             "X-Search-Rate-Remaining": f"{rate_remaining}/{rate_limiter.limit}",
         }
-        return StreamingResponse(
+        return StreamingResponse(  # type: ignore[return-value]
             event_stream(), media_type="text/event-stream", headers=headers
         )
 
@@ -1206,7 +1206,7 @@ async def answer(request: Request, body: AnswerRequest, response: Response) -> A
             "X-Search-Budget": f"{max_searches}/{max_searches}",
             "X-Search-Rate-Remaining": f"{rate_remaining}/{rate_limiter.limit}",
         }
-        return StreamingResponse(
+        return StreamingResponse(  # type: ignore[return-value]
             event_stream(), media_type="text/event-stream", headers=headers
         )
 
@@ -1428,6 +1428,44 @@ async def create_monitor(body: MonitorCreateRequest) -> MonitorResponse:
     from datetime import datetime
 
     monitor_id = str(uuid.uuid4())
+    now = datetime.now(UTC).isoformat()
+
+    if body.monitor_type == "search":
+        config = {
+            "monitor_type": "search",
+            "search_config": body.search_config.model_dump() if body.search_config else {},
+            "schedule": body.schedule,
+            "webhook": body.webhook,
+            "created_at": now,
+        }
+        save_monitor(monitor_id, config)
+        return MonitorResponse(
+            id=monitor_id,
+            monitor_type="search",
+            search_config=config["search_config"],  # type: ignore[arg-type]
+            schedule=body.schedule,
+            webhook=body.webhook,
+            created_at=now,
+        )
+    else:
+        # Scrape type (default)
+        config = {
+            "monitor_type": "scrape",
+            "url": body.url,
+            "schedule": body.schedule,
+            "webhook": body.webhook,
+            "created_at": now,
+            "last_content": "",
+        }
+        save_monitor(monitor_id, config)
+        return MonitorResponse(
+            id=monitor_id,
+            monitor_type="scrape",
+            url=body.url,
+            schedule=body.schedule,
+            webhook=body.webhook,
+            created_at=now,
+        )
     config = {
         "url": body.url,
         "schedule": body.schedule,
@@ -1450,17 +1488,33 @@ async def list_monitors() -> MonitorListResponse:
     monitors = get_all_monitors()
     items = []
     for mid, cfg in monitors.items():
-        items.append(
-            MonitorResponse(
-                id=mid,
-                url=cfg.get("url", ""),
-                schedule=cfg.get("schedule", ""),
-                webhook=cfg.get("webhook"),
-                last_checked=cfg.get("last_checked"),
-                last_result=cfg.get("last_result"),
-                created_at=cfg.get("created_at") or "",  # type: ignore[arg-type]
+        mt = cfg.get("monitor_type", "scrape")
+        if mt == "search":
+            items.append(
+                MonitorResponse(
+                    id=mid,
+                    monitor_type="search",
+                    search_config=cfg.get("search_config"),  # type: ignore[arg-type]
+                    schedule=cfg.get("schedule", ""),
+                    webhook=cfg.get("webhook"),
+                    last_checked=cfg.get("last_checked"),
+                    last_result=cfg.get("last_result"),
+                    created_at=cfg.get("created_at", ""),
+                )
             )
-        )
+        else:
+            items.append(
+                MonitorResponse(
+                    id=mid,
+                    monitor_type="scrape",
+                    url=cfg.get("url", ""),
+                    schedule=cfg.get("schedule", ""),
+                    webhook=cfg.get("webhook"),
+                    last_checked=cfg.get("last_checked"),
+                    last_result=cfg.get("last_result"),
+                    created_at=cfg.get("created_at", ""),
+                )
+            )
     return MonitorListResponse(monitors=items)
 
 
@@ -1470,6 +1524,29 @@ async def get_monitor_status(monitor_id: str) -> MonitorResponse:
     if cfg is None:
         raise NotFoundError(
             detail="Monitor not found", details={"monitor_id": monitor_id}
+        )
+    mt = cfg.get("monitor_type", "scrape")
+    if mt == "search":
+        return MonitorResponse(
+            id=monitor_id,
+            monitor_type="search",
+            search_config=cfg.get("search_config"),  # type: ignore[arg-type]
+            schedule=cfg.get("schedule", ""),
+            webhook=cfg.get("webhook"),
+            last_checked=cfg.get("last_checked"),
+            last_result=cfg.get("last_result"),
+            created_at=cfg.get("created_at", ""),
+        )
+    else:
+        return MonitorResponse(
+            id=monitor_id,
+            monitor_type="scrape",
+            url=cfg.get("url", ""),
+            schedule=cfg.get("schedule", ""),
+            webhook=cfg.get("webhook"),
+            last_checked=cfg.get("last_checked"),
+            last_result=cfg.get("last_result"),
+            created_at=cfg.get("created_at", ""),
         )
     return MonitorResponse(
         id=monitor_id,
@@ -1497,7 +1574,32 @@ async def update_monitor(
         cfg["schedule"] = body.schedule
     if body.webhook is not None:
         cfg["webhook"] = body.webhook
+    if body.search_config is not None:
+        cfg["search_config"] = body.search_config.model_dump()
     save_monitor(monitor_id, cfg)
+    mt = cfg.get("monitor_type", "scrape")
+    if mt == "search":
+        return MonitorResponse(
+            id=monitor_id,
+            monitor_type="search",
+            search_config=cfg.get("search_config"),  # type: ignore[arg-type]
+            schedule=cfg.get("schedule", ""),
+            webhook=cfg.get("webhook"),
+            last_checked=cfg.get("last_checked"),
+            last_result=cfg.get("last_result"),
+            created_at=cfg.get("created_at", ""),
+        )
+    else:
+        return MonitorResponse(
+            id=monitor_id,
+            monitor_type="scrape",
+            url=cfg.get("url", ""),
+            schedule=cfg.get("schedule", ""),
+            webhook=cfg.get("webhook"),
+            last_checked=cfg.get("last_checked"),
+            last_result=cfg.get("last_result"),
+            created_at=cfg.get("created_at", ""),
+        )
     return MonitorResponse(
         id=monitor_id,
         url=cfg.get("url", ""),
@@ -1516,6 +1618,12 @@ async def delete_monitor_route(monitor_id: str) -> MonitorDeleteResponse:
         raise NotFoundError(
             detail="Monitor not found", details={"monitor_id": monitor_id}
         )
+    # Clean up search monitor seen set
+    if cfg.get("monitor_type") == "search":
+        from redis import Redis
+
+        r = Redis.from_url("redis://valkey:6379/0", decode_responses=True)
+        r.delete(f"monitor:{monitor_id}:seen")
     delete_monitor(monitor_id)
     return MonitorDeleteResponse(success=True)
 

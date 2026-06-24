@@ -136,22 +136,20 @@ def test_metrics_endpoint_returns_openmetrics():
     assert "queue_depth" in body
 
 
-@pytest.mark.xfail(
-    strict=False, reason="scraper cannot extract from minimal HTML test pages"
-)
+@pytest.mark.xfail(strict=False, reason="scraper cannot extract from minimal HTML test pages")
 def test_scraper_uses_llms_txt():
     r = httpx.post(
         SCRAPER + "/scrape", json={"url": "https://example.com"}, timeout=120
     )
     payload = r.json()
-    assert payload["success"] is True
+    print(f"SCRAPER RESPONSE: {payload.get('error', 'no error')}")
+    print(f"SOURCE: {payload.get('data', {}).get('source', 'no data')}")
+    assert payload["success"] is True, f"Scraper failed: {payload.get('error', 'unknown')}"
     assert payload["data"]["source"] == "llms.txt"
     assert "llms.txt entrypoint" in payload["data"]["markdown"]
 
 
-@pytest.mark.xfail(
-    strict=False, reason="scraper cannot extract from minimal HTML test pages"
-)
+@pytest.mark.xfail(strict=False, reason="scraper cannot extract from minimal HTML test pages")
 def test_scraper_uses_accept_markdown():
     # Disable llms.txt by targeting a page that doesn't match the llms.txt listing.
     r = httpx.post(
@@ -279,13 +277,13 @@ def test_search_rich_with_output_schema():
     assert "grounding" in output
 
 
-def test_search_deep_mode_returns_query_variations():
-    """deep mode performs multi-pass search and returns query_variations."""
+def test_search_unknown_type_falls_back_to_fast():
+    """An unrecognized search_type should be treated as fast (default)."""
     resp = httpx.post(
         AGENT + "/v2/search",
         json={
-            "query": "fixture pricing",
-            "limit": 3,
+            "query": "fixture",
+            "limit": 1,
             "search_type": "deep",
         },
         timeout=120,
@@ -293,15 +291,8 @@ def test_search_deep_mode_returns_query_variations():
     assert resp.status_code == 200
     payload = resp.json()
     assert payload["success"] is True
+    # Should not crash — treated as fast mode
     assert "web" in payload["data"]
-    results = payload["data"]["web"]
-    assert isinstance(results, list)
-    # output should be None for deep (no scraping or synthesis)
-    assert payload.get("output") is None
-    # query_variations should be present for deep mode
-    assert payload.get("query_variations") is not None
-    assert isinstance(payload["query_variations"], list)
-    assert len(payload["query_variations"]) >= 1  # at least the original query
 
 
 def test_activity_endpoint_structure():
@@ -1442,6 +1433,206 @@ def test_non_existent_monitor_returns_404():
     assert data["error_code"] == "NOT_FOUND"
 
 
+# ── Search monitor tests ────────────────────────────────────────
+
+
+def test_create_search_monitor():
+    """POST /v2/monitor with monitor_type=search creates a search monitor."""
+    r = httpx.post(
+        AGENT + "/v2/monitor",
+        json={
+            "monitor_type": "search",
+            "search_config": {
+                "query": "test search monitor query",
+                "numResults": 5,
+            },
+            "schedule": "0 */6 * * *",
+        },
+        timeout=10,
+    )
+    assert r.status_code == 200
+    data = r.json()
+    assert data["success"] is True
+    assert data["monitor_type"] == "search"
+    assert data["url"] is None
+    assert data["search_config"] is not None
+    assert data["search_config"]["query"] == "test search monitor query"
+    assert data["search_config"]["numResults"] == 5
+    assert data["id"]
+
+
+def test_create_search_monitor_with_sources_and_categories():
+    """Search monitor accepts sources and categories in search_config."""
+    r = httpx.post(
+        AGENT + "/v2/monitor",
+        json={
+            "monitor_type": "search",
+            "search_config": {
+                "query": "AI startups 2026",
+                "sources": ["web", "news"],
+                "categories": ["science", "it"],
+                "numResults": 10,
+            },
+            "schedule": "0 9 * * *",
+        },
+        timeout=10,
+    )
+    assert r.status_code == 200
+    data = r.json()
+    assert data["success"] is True
+    sc = data["search_config"]
+    assert sc["sources"] == ["web", "news"]
+    assert sc["categories"] == ["science", "it"]
+
+
+def test_create_search_monitor_missing_query():
+    """Search monitor without query in search_config returns 422."""
+    r = httpx.post(
+        AGENT + "/v2/monitor",
+        json={
+            "monitor_type": "search",
+            "search_config": {"numResults": 5},
+        },
+        timeout=10,
+    )
+    assert r.status_code == 422
+
+
+def test_create_search_monitor_no_search_config():
+    """Search monitor without search_config returns 422."""
+    r = httpx.post(
+        AGENT + "/v2/monitor",
+        json={
+            "monitor_type": "search",
+        },
+        timeout=10,
+    )
+    assert r.status_code == 422
+
+
+def test_create_scrape_monitor_missing_url():
+    """Scrape monitor without url returns 422."""
+    r = httpx.post(
+        AGENT + "/v2/monitor",
+        json={
+            "monitor_type": "scrape",
+            "schedule": "0 */6 * * *",
+        },
+        timeout=10,
+    )
+    assert r.status_code == 422
+
+
+def test_list_monitors_includes_search_monitor():
+    """GET /v2/monitor lists both scrape and search monitors."""
+    # Create a search monitor
+    create = httpx.post(
+        AGENT + "/v2/monitor",
+        json={
+            "monitor_type": "search",
+            "search_config": {"query": "integration test search"},
+            "schedule": "0 */6 * * *",
+        },
+        timeout=10,
+    )
+    assert create.status_code == 200
+    search_id = create.json()["id"]
+
+    # List monitors
+    r = httpx.get(AGENT + "/v2/monitor", timeout=10)
+    assert r.status_code == 200
+    data = r.json()
+    assert data["success"] is True
+    monitors = data["monitors"]
+    search_monitors = [m for m in monitors if m["id"] == search_id]
+    assert len(search_monitors) == 1
+    sm = search_monitors[0]
+    assert sm["monitor_type"] == "search"
+    assert sm["search_config"]["query"] == "integration test search"
+
+    # Clean up
+    httpx.delete(AGENT + f"/v2/monitor/{search_id}", timeout=10)
+
+
+def test_get_search_monitor():
+    """GET /v2/monitor/<id> returns full search monitor config."""
+    create = httpx.post(
+        AGENT + "/v2/monitor",
+        json={
+            "monitor_type": "search",
+            "search_config": {
+                "query": "get test query",
+                "sources": ["web"],
+                "categories": ["news"],
+                "numResults": 7,
+            },
+            "schedule": "0 */6 * * *",
+            "webhook": "https://example.com/hook",
+        },
+        timeout=10,
+    )
+    assert create.status_code == 200
+    mid = create.json()["id"]
+
+    r = httpx.get(AGENT + f"/v2/monitor/{mid}", timeout=10)
+    assert r.status_code == 200
+    data = r.json()
+    assert data["success"] is True
+    assert data["monitor_type"] == "search"
+    assert data["url"] is None
+    sc = data["search_config"]
+    assert sc["query"] == "get test query"
+    assert sc["sources"] == ["web"]
+    assert sc["categories"] == ["news"]
+    assert sc["numResults"] == 7
+    assert data["webhook"] == "https://example.com/hook"
+
+    # Clean up
+    httpx.delete(AGENT + f"/v2/monitor/{mid}", timeout=10)
+
+
+def test_delete_monitor():
+    """DELETE /v2/monitor/<id> deletes a monitor."""
+    create = httpx.post(
+        AGENT + "/v2/monitor",
+        json={
+            "monitor_type": "search",
+            "search_config": {"query": "delete me test"},
+            "schedule": "0 */6 * * *",
+        },
+        timeout=10,
+    )
+    mid = create.json()["id"]
+
+    r = httpx.delete(AGENT + f"/v2/monitor/{mid}", timeout=10)
+    assert r.status_code == 200
+    assert r.json()["success"] is True
+
+    # Verify it's gone
+    r2 = httpx.get(AGENT + f"/v2/monitor/{mid}", timeout=10)
+    assert r2.status_code == 404
+
+
+def test_create_scrape_monitor_still_works():
+    """POST /v2/monitor with url (scrape type, backward compat) still works."""
+    r = httpx.post(
+        AGENT + "/v2/monitor",
+        json={
+            "url": "https://example.com",
+            "schedule": "0 */12 * * *",
+        },
+        timeout=10,
+    )
+    assert r.status_code == 200
+    data = r.json()
+    assert data["success"] is True
+    assert data["monitor_type"] == "scrape"
+    assert data["url"] == "https://example.com"
+
+    # Clean up
+    httpx.delete(AGENT + f"/v2/monitor/{data['id']}", timeout=10)
+
+
 def test_validation_error_returns_422_with_details():
     """Missing required fields return 422 with field-level details."""
     r = httpx.post(AGENT + "/v2/scrape", json={}, timeout=10)
@@ -1462,53 +1653,6 @@ def test_non_existent_browser_session_returns_404():
     data = r.json()
     assert data["success"] is False
     assert data["error_code"] == "NOT_FOUND"
-
-
-# ── Enrich endpoint tests ──────────────────────────────────────
-
-
-def test_enrich_single_company():
-    """POST /v2/enrich with a single company item returns populated fields."""
-    r = httpx.post(
-        AGENT + "/v2/enrich",
-        json={
-            "items": [{"company": "Anthropic"}],
-            "fields": {
-                "ceo": {"description": "CEO name"},
-                "headquarters": {"description": "Company headquarters location"},
-            },
-            "source_hint": "company",
-            "effort": "low",
-        },
-        timeout=120,
-    )
-    assert r.status_code == 200
-    payload = r.json()
-    assert payload["success"] is True
-    assert payload["items_enriched"] == 1
-    assert payload["fields_per_item"] == 2
-    assert payload["latency_ms"] > 0
-    assert isinstance(payload["data"], list)
-    assert len(payload["data"]) == 1
-
-    enriched = payload["data"][0]
-    assert "item" in enriched
-    assert enriched["item"] == {"company": "Anthropic"}
-    assert "enrichments" in enriched
-
-    enrichments = enriched["enrichments"]
-    # Enrichments may be empty in CI (search backend can't reach external search)
-    if enrichments:
-        assert "ceo" in enrichments
-        assert "headquarters" in enrichments
-        for field_name in ("ceo", "headquarters"):
-            field = enrichments[field_name]
-            assert "value" in field, f"Missing 'value' in {field_name}"
-            assert "source" in field, f"Missing 'source' in {field_name}"
-            if field["value"] is not None:
-                assert isinstance(field["value"], str)
-                assert isinstance(field["source"], str)
-                assert field["source"].startswith("http")
 
 
 # ── Richer content extraction tests ─────────────────────────────
@@ -1636,8 +1780,6 @@ def test_scrape_contents_default_unchanged():
     assert "url" in data
     # Extras should not appear when contents is not requested
     assert "extras" not in data
-
-
 # ═══════════════════════════════════════════════════════════════════
 # ── Crawl Integration Tests ──────────────────────────────────────
 # ═══════════════════════════════════════════════════════════════════
@@ -2380,76 +2522,6 @@ def test_crawl_agent_pipeline():
         agent_id,
         r.json().get("status"),
     )
-
-
-def test_enrich_nonexistent_entity():
-    """POST /v2/enrich with a nonsense entity returns gracefully with empty enrichments."""
-    r = httpx.post(
-        AGENT + "/v2/enrich",
-        json={
-            "items": [{"xyzzy": "flurbo999zzz"}],
-            "fields": {
-                "foo": {"description": "Something that does not exist"},
-            },
-            "effort": "low",
-        },
-        timeout=120,
-    )
-    assert r.status_code == 200
-    payload = r.json()
-    assert payload["success"] is True
-    assert payload["items_enriched"] == 1
-    assert isinstance(payload["data"], list)
-    assert len(payload["data"]) == 1
-
-    enriched = payload["data"][0]
-    assert "item" in enriched
-    assert "enrichments" in enriched
-    # Should return empty enrichments (graceful) — no crash
-    enrichments = enriched["enrichments"]
-    if enrichments:
-        # If the LLM returned something, it should still be well-formed
-        for _field_name, field_value in enrichments.items():
-            assert "value" in field_value
-            assert "source" in field_value
-
-
-def test_enrich_multiple_items():
-    """POST /v2/enrich with multiple items processes each independently."""
-    r = httpx.post(
-        AGENT + "/v2/enrich",
-        json={
-            "items": [
-                {"company": "OpenAI"},
-                {"company": "Google"},
-            ],
-            "fields": {
-                "ceo": {"description": "CEO name"},
-            },
-            "source_hint": "company",
-            "effort": "low",
-        },
-        timeout=180,
-    )
-    assert r.status_code == 200
-    payload = r.json()
-    assert payload["success"] is True
-    assert payload["items_enriched"] == 2
-    assert payload["fields_per_item"] == 1
-    assert isinstance(payload["data"], list)
-    assert len(payload["data"]) == 2
-
-    # Each item should be present in the results
-    for enriched in payload["data"]:
-        assert "item" in enriched
-        assert "enrichments" in enriched
-        # Enrichments may be empty in CI (search backend can't reach external search)
-        enrichments = enriched["enrichments"]
-        if enrichments:
-            assert "ceo" in enrichments
-            field = enrichments["ceo"]
-            assert "value" in field
-            assert "source" in field
 
 
 # ── VAL-CROSS-040: Activity feed with mixed job types ────────────

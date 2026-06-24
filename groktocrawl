@@ -689,8 +689,29 @@ class Client:
 
     # ---- Monitor ----
 
-    def create_monitor(self, url, schedule="0 */6 * * *", webhook=None):
-        data = {"url": url, "schedule": schedule}
+    def create_monitor(
+        self,
+        url=None,
+        schedule="0 */6 * * *",
+        webhook=None,
+        monitor_type="scrape",
+        query=None,
+        sources=None,
+        categories=None,
+        num_results=10,
+    ):
+        data = {"schedule": schedule, "monitor_type": monitor_type}
+        if monitor_type == "search":
+            data["search_config"] = {
+                "query": query,
+                "numResults": num_results,
+            }
+            if sources:
+                data["search_config"]["sources"] = sources
+            if categories:
+                data["search_config"]["categories"] = categories
+        else:
+            data["url"] = url
         if webhook:
             data["webhook"] = webhook
         return self._request("POST", "/monitor", json_data=data)
@@ -1620,18 +1641,27 @@ def cmd_monitor(client: Client, args: argparse.Namespace) -> None:
     if action == "create":
         if client.dry_run:
             emit(
-                f"[dry-run] Would create monitor for {args.url}",
+                f"[dry-run] Would create {args.type} monitor for {args.url or args.query}",
                 {
                     "dry_run": True,
                     "command": "monitor",
                     "action": "create",
+                    "monitor_type": args.type,
                     "url": args.url,
+                    "query": args.query,
                 },
             )
             return
         try:
             result = client.create_monitor(
-                args.url, schedule=args.schedule, webhook=args.webhook
+                url=args.url if args.type == "scrape" else None,
+                schedule=args.schedule,
+                webhook=args.webhook,
+                monitor_type=args.type,
+                query=args.query if args.type == "search" else None,
+                sources=getattr(args, "sources", None),
+                categories=getattr(args, "categories", None),
+                num_results=getattr(args, "num_results", 10),
             )
         except ApiError as e:
             die(str(e))
@@ -1639,7 +1669,15 @@ def cmd_monitor(client: Client, args: argparse.Namespace) -> None:
             emit("", result)
         else:
             log(f"Monitor created: {result.get('id', '')}")
-            log(f"  URL: {args.url}")
+            mt = result.get("monitor_type", "scrape")
+            if mt == "search":
+                sc = result.get("search_config", {})
+                log(f"  Type:     search")
+                log(f"  Query:    {sc.get('query', '')}")
+                log(f"  Results:  {sc.get('numResults', 10)}")
+            else:
+                log(f"  Type:     scrape")
+                log(f"  URL:      {result.get('url', '')}")
             log(f"  Schedule: {args.schedule}")
 
     elif action == "list":
@@ -1665,7 +1703,13 @@ def cmd_monitor(client: Client, args: argparse.Namespace) -> None:
             lr = m.get("last_result", "never checked")
             lc = m.get("last_checked", "")
             lc_str = f" @ {lc[:19]}" if lc else ""
-            print(f"  {m['id'][:8]}  {m['url']}  [{lr}]{lc_str}")
+            mt = m.get("monitor_type", "scrape")
+            if mt == "search":
+                sc = m.get("search_config", {})
+                label = f'search: "{sc.get("query", "?")}"'
+            else:
+                label = m.get("url", "")
+            print(f"  {m['id'][:8]}  {label}  [{lr}]{lc_str}")
         print()
 
     elif action == "get":
@@ -1682,13 +1726,22 @@ def cmd_monitor(client: Client, args: argparse.Namespace) -> None:
         if JSON_OUTPUT:
             emit("", result)
         else:
+            mt = result.get("monitor_type", "scrape")
             print(f"Monitor: {result.get('id', '')}")
-            print(f"  URL:      {result.get('url', '')}")
-            print(f"  Schedule: {result.get('schedule', '')}")
-            print(f"  Webhook:  {result.get('webhook', '(none)')}")
-            print(f"  Created:  {result.get('created_at', '')}")
-            print(f"  Checked:  {result.get('last_checked', 'never')}")
-            print(f"  Result:   {result.get('last_result', 'pending')}")
+            print(f"  Type:      {mt}")
+            if mt == "search":
+                sc = result.get("search_config", {})
+                print(f"  Query:     {sc.get('query', '')}")
+                print(f"  Sources:   {sc.get('sources') or '(all)'}")
+                print(f"  Categories:{sc.get('categories') or '(all)'}")
+                print(f"  Results:   {sc.get('numResults', 10)}")
+            else:
+                print(f"  URL:       {result.get('url', '')}")
+            print(f"  Schedule:  {result.get('schedule', '')}")
+            print(f"  Webhook:   {result.get('webhook', '(none)')}")
+            print(f"  Created:   {result.get('created_at', '')}")
+            print(f"  Checked:   {result.get('last_checked', 'never')}")
+            print(f"  Result:    {result.get('last_result', 'pending')}")
 
     elif action == "update":
         if client.dry_run:
@@ -1845,6 +1898,7 @@ def make_parser() -> argparse.ArgumentParser:
               groktocrawl crawl https://docs.example.com --max-depth 2 --limit 20
               groktocrawl agent "What is new in Google I/O 2025?"
               groktocrawl monitor create https://example.com --schedule "0 */12 * * *"
+              groktocrawl monitor create --type search --query "new AI startups 2026" --schedule "0 9 * * *"
               groktocrawl monitor list
               groktocrawl parse report.pdf --output report.md
               groktocrawl generate-llmstxt https://docs.example.com
@@ -2062,13 +2116,44 @@ def make_parser() -> argparse.ArgumentParser:
     p_monitor_sub = p_monitor.add_subparsers(dest="command_action")
 
     p_monitor_create = p_monitor_sub.add_parser("create", help="Create a monitor")
-    p_monitor_create.add_argument("url", help="URL to monitor for changes")
+    p_monitor_create.add_argument(
+        "url",
+        nargs="?",
+        help="URL to monitor for changes (required for scrape type)",
+    )
     p_monitor_create.add_argument(
         "--schedule",
         default="0 */6 * * *",
         help="Cron expression (default: every 6 hours)",
     )
     p_monitor_create.add_argument("--webhook", help="Webhook URL called on change")
+    p_monitor_create.add_argument(
+        "--type",
+        choices=["scrape", "search"],
+        default="scrape",
+        help="Monitor type: scrape (watch URL) or search (watch query)",
+    )
+    p_monitor_create.add_argument(
+        "--query",
+        help="Search query (required for search type)",
+    )
+    p_monitor_create.add_argument(
+        "--sources",
+        nargs="+",
+        choices=["web", "news", "images", "video", "social"],
+        help="Source types to search",
+    )
+    p_monitor_create.add_argument(
+        "--categories",
+        nargs="+",
+        help="Content categories: research, github, pdf, news, science, it",
+    )
+    p_monitor_create.add_argument(
+        "--num-results",
+        type=int,
+        default=10,
+        help="Max results per check (default: 10)",
+    )
 
     p_monitor_list = p_monitor_sub.add_parser("list", help="List all monitors")
 
