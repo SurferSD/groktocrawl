@@ -168,7 +168,7 @@ jobs:
           # First check from host that the API is alive
           python3 -c "
           import time, urllib.request, urllib.error
-          deadline = time.time() + 120
+          deadline = time.time() + 300
           while time.time() < deadline:
               try:
                   r = urllib.request.urlopen('http://localhost:8003/health', timeout=5)

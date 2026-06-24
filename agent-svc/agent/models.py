@@ -708,6 +708,7 @@ class SearchRequest(BaseModel):
     output_schema: dict[str, Any] | None = None  # JSON Schema for structured extraction
     system_prompt: str | None = None  # Guidance for synthesis
     contents: ContentsOptions | None = None  # Content extraction options
+    stream: bool = Field(default=False, description="SSE streaming response")
 
 
 class SearchResult(BaseModel):

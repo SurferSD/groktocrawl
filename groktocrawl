@@ -525,6 +525,45 @@ class Client:
             data["contents"] = contents
         return self._request("POST", "/search", json_data=data)
 
+    def search_stream(
+        self,
+        query: str,
+        limit: int = 5,
+        categories: list[str] | None = None,
+        sources: list[str] | None = None,
+        search_type: str = "fast",
+        retrieval_mode: str = "keyword",
+        output_schema: dict | None = None,
+        system_prompt: str | None = None,
+    ):
+        """Search with SSE streaming.
+
+        Returns a dict with ``_stream`` key containing the raw streaming response.
+        """
+        import requests
+
+        data: dict[str, Any] = {
+            "query": query,
+            "limit": limit,
+            "search_type": search_type,
+            "retrieval_mode": retrieval_mode,
+            "stream": True,
+        }
+        if categories:
+            data["categories"] = categories
+        if sources:
+            data["sources"] = sources
+        if output_schema:
+            data["output_schema"] = output_schema
+        if system_prompt:
+            data["system_prompt"] = system_prompt
+
+        url = self._url("/search")
+        resp = requests.post(url, json=data, timeout=120, stream=True)
+        if resp.status_code >= 400:
+            raise ApiError(f"API error ({resp.status_code}): {resp.text[:500]}")
+        return {"_stream": resp}
+
     def map_urls(
         self,
         url: str,
@@ -820,6 +859,46 @@ def cmd_search(client: Client, args: argparse.Namespace) -> None:
                     contents = json.loads(args.contents)
             except (json.JSONDecodeError, FileNotFoundError) as e:
                 die(f"Invalid contents: {e}")
+
+        if args.stream:
+            result = client.search_stream(
+                query=args.query,
+                limit=args.limit,
+                categories=args.categories,
+                sources=args.sources,
+                search_type=args.search_type,
+                retrieval_mode=args.retrieval_mode,
+                output_schema=output_schema,
+                system_prompt=args.system_prompt,
+            )
+            resp = result["_stream"]
+            shown_header = False
+            result_count = 0
+            for line in resp.iter_lines(decode_unicode=True):
+                if not line or not line.startswith("data: "):
+                    continue
+                data_str = line[6:].strip()
+                if data_str == "[DONE]":
+                    break
+                try:
+                    event = json.loads(data_str)
+                    if JSON_OUTPUT:
+                        emit("", event)
+                    elif event["type"] == "search_result":
+                        r = event["result"]
+                        result_count += 1
+                        if not shown_header:
+                            print(f"Search results for: {args.query}\n")
+                            shown_header = True
+                        print(f"{result_count}. {r.get('title', '(no title)')}")
+                        print(f"   {r.get('url', '')}")
+                        desc = r.get("description", "")
+                        if desc:
+                            print(f"   {desc[:200]}")
+                        print()
+                except (json.JSONDecodeError, KeyError):
+                    pass
+            return
 
         result = client.search(
             query=args.query,
@@ -1944,6 +2023,11 @@ def make_parser() -> argparse.ArgumentParser:
         "--contents",
         help="Content extraction options as JSON string or @file.json. "
         'Example: \'{"highlights":{"maxCharacters":300}}\'',
+    )
+    p_search.add_argument(
+        "--stream",
+        action="store_true",
+        help="SSE streaming output (results appear as they arrive)",
     )
 
     p_map = subparsers.add_parser("map", help="Discover URLs on a site")

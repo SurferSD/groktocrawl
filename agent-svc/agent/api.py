@@ -851,6 +851,35 @@ async def search_v1(request: Request, body: SearchRequest) -> dict[str, Any]:
 
 @router.post("/v2/search", response_model=SearchResponse)
 async def search(request: Request, body: SearchRequest) -> SearchResponse:
+    if body.stream:
+        from fastapi.responses import StreamingResponse
+
+        async def event_stream():
+            from .research import run_search_stream
+
+            async for event in run_search_stream(
+                query=body.query,
+                limit=body.limit,
+                search_type=body.search_type,
+                retrieval_mode=body.retrieval_mode,
+                categories=body.categories,
+                sources=body.sources,
+                output_schema=body.output_schema,
+                system_prompt=body.system_prompt,
+                searxng_url=request.app.state.searxng_url,
+                scraper_url=request.app.state.scraper_url,
+                semantic_url=request.app.state.semantic_url,
+                llm_base_url=request.app.state.llm_base_url,
+                llm_api_key=request.app.state.llm_api_key,
+                llm_model=request.app.state.llm_model,
+            ):
+                import json
+
+                yield f"data: {json.dumps(event)}\n\n"
+            yield "data: [DONE]\n\n"
+
+        return StreamingResponse(event_stream(), media_type="text/event-stream")  # type: ignore[return-value]
+
     from .searxng_client import SearXNGClient
 
     searxng = SearXNGClient(request.app.state.searxng_url)

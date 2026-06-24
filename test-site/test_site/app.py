@@ -35,10 +35,7 @@ async def health():
 async def anything():
     """Catch-all endpoint for scraper tests."""
     from fastapi.responses import HTMLResponse
-
-    return HTMLResponse(
-        "<html><body><h1>Anything</h1><p>This is the anything page.</p><a href='/pricing'>Pricing</a><a href='/about'>About</a></body></html>"
-    )
+    return HTMLResponse("<html><body><h1>Anything</h1><p>This is the anything page.</p><a href='/pricing'>Pricing</a><a href='/about'>About</a></body></html>")
 
 
 @app.get("/llms.txt")
