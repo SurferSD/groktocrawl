@@ -395,26 +395,8 @@ async def _process_batch_scrape_async(
                     total,
                 )
                 break
-            try:
-                result = await scraper.scrape(url)
-            except Exception as e:
-                errors.append(
-                    {
-                        "url": url,
-                        "error": str(e),
-                        "error_type": "scrape_error",
-                        "error_code": "SCRAPE_ERROR",
-                        "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-                    }
-                )
-                store.update_job_progress(
-                    job_id,
-                    pages=list(pages),
-                    errors=list(errors),
-                    total=total,
-                )
-                continue
 
+            result = await scraper.scrape(url)
             if result.get("success"):
                 data = result["data"]
                 pages.append({"url": url, "markdown": data.get("markdown", "")})
