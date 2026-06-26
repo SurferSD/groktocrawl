@@ -34,6 +34,7 @@ from .models import (
     BrowserExecuteResponse,
     BrowserListResponse,
     Citation,
+    ConcurrencyCheckResponse,
     CrawlActiveItem,
     CrawlActiveResponse,
     CrawlCreateResponse,
@@ -115,6 +116,18 @@ async def list_activity(request: Request) -> ActivityResponse:
             )
         )
     return ActivityResponse(data=items)
+
+
+@router.get("/v2/concurrency-check", response_model=ConcurrencyCheckResponse)
+async def concurrency_check(request: Request) -> ConcurrencyCheckResponse:
+    """Check current concurrency utilization.
+
+    Returns the number of currently processing jobs and the configured
+    maximum concurrency.
+    """
+    store: JobStore = request.app.state.job_store
+    current = store.count_active_jobs()
+    return ConcurrencyCheckResponse(max_concurrency=50, current=current)
 
 
 @router.post("/v2/scrape", response_model=ScrapeResponse)
