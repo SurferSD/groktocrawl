@@ -456,7 +456,7 @@ async def _process_batch_scrape_async(
                 asyncio.create_task(_index_batch_async(_index_batch))
 
         return {
-            "completed": store.get_completed(job_id),
+            "completed": len(pages),
             "total": total,
             "pages": pages,
             "errors": errors,
