@@ -4,7 +4,6 @@ from enum import Enum
 from typing import Any
 from urllib.parse import urlparse
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from pydantic.alias_generators import to_camel
 
@@ -44,9 +43,9 @@ VALID_SCRAPE_PROXY_VALUES: frozenset[str] = frozenset(
 
 
 class VerbosityLevel(str, Enum):
-    compact = "compact"       # ~300 chars of body text
-    standard = "standard"     # Current behavior (readability extraction)
-    full = "full"             # Complete page text including structural markup
+    compact = "compact"  # ~300 chars of body text
+    standard = "standard"  # Current behavior (readability extraction)
+    full = "full"  # Complete page text including structural markup
 
 
 class SectionCategory(str, Enum):
@@ -60,15 +59,19 @@ class SectionCategory(str, Enum):
 
 
 class ExtrasOptions(BaseModel):
-    links: int | None = None        # Max external links to extract
-    imageLinks: int | None = None   # Max image URLs to extract
-    codeBlocks: int | None = None   # Max code blocks to extract
+    links: int | None = None  # Max external links to extract
+    imageLinks: int | None = None  # Max image URLs to extract
+    codeBlocks: int | None = None  # Max code blocks to extract
 
 
 class ContentsOptions(BaseModel):
-    text: bool | dict | None = None          # True = full text, or dict with verbosity/sections
-    highlights: bool | dict | None = None    # True = auto highlights, or dict with query/maxCharacters
-    summary: bool | dict | None = None       # True = auto summary, or dict with query/maxTokens
+    text: bool | dict | None = None  # True = full text, or dict with verbosity/sections
+    highlights: bool | dict | None = (
+        None  # True = auto highlights, or dict with query/maxCharacters
+    )
+    summary: bool | dict | None = (
+        None  # True = auto summary, or dict with query/maxTokens
+    )
     extras: ExtrasOptions | None = None
 
 
@@ -586,6 +589,35 @@ class CrawlCreateResponse(BaseModel):
     id: str
 
 
+class BatchScrapeStatusResponse(BaseModel):
+    """Status response for GET /v2/batch/scrape/{id}.
+
+    Mirrors CrawlStatusResponse but without crawl-specific fields
+    (errors, robots_blocked, filtered_out are separate endpoints).
+    """
+
+    model_config = ConfigDict(
+        populate_by_name=True,
+        alias_generator=to_camel,
+    )
+
+    success: bool = True
+    status: str = "processing"
+    completed: int = 0
+    total: int = 0
+    credits_used: int | None = None
+    data: list[dict[str, Any]] | None = None
+    error: str | None = None
+    next: str | None = Field(
+        default=None,
+        description="URL for the next chunk of paginated results.",
+    )
+    created_at: str | None = None
+    completed_at: str | None = None
+    expires_at: str | None = None
+    duration: int | None = None
+
+
 class CrawlStatusResponse(BaseModel):
     """Firecrawl v2-compatible crawl status response.
 
@@ -717,10 +749,10 @@ class SearchResult(BaseModel):
     title: str
     description: str = ""
     # ── Content extraction fields (populated when contents in SearchRequest) ──
-    highlights: str | None = None    # LLM-extracted relevant passages
-    summary: str | None = None       # LLM-generated summary
-    extras: dict | None = None       # Links, images, code blocks from scraper
-    markdown: str | None = None      # Full scraped markdown when contents requested
+    highlights: str | None = None  # LLM-extracted relevant passages
+    summary: str | None = None  # LLM-generated summary
+    extras: dict | None = None  # Links, images, code blocks from scraper
+    markdown: str | None = None  # Full scraped markdown when contents requested
 
 
 class SearchResponse(BaseModel):
@@ -826,9 +858,16 @@ class SearchMonitorConfig(BaseModel):
     """Configuration for search-based monitors."""
 
     query: str = Field(..., description="Search query to monitor")
-    sources: list[str] | None = Field(None, description="Source types (web, news, images, video, social)")
-    categories: list[str] | None = Field(None, description="Content categories (research, github, pdf, news, science, it)")
-    numResults: int = Field(default=10, ge=1, le=50, description="Max results per check")
+    sources: list[str] | None = Field(
+        None, description="Source types (web, news, images, video, social)"
+    )
+    categories: list[str] | None = Field(
+        None,
+        description="Content categories (research, github, pdf, news, science, it)",
+    )
+    numResults: int = Field(
+        default=10, ge=1, le=50, description="Max results per check"
+    )
 
 
 class MonitorCreateRequest(BaseModel):
@@ -855,7 +894,9 @@ class MonitorCreateRequest(BaseModel):
             if not self.url:
                 raise ValueError("url is required for monitor_type='scrape'")
         else:
-            raise ValueError(f"Unknown monitor_type: '{self.monitor_type}'. Must be 'scrape' or 'search'")
+            raise ValueError(
+                f"Unknown monitor_type: '{self.monitor_type}'. Must be 'scrape' or 'search'"
+            )
         return self
 
 
@@ -999,6 +1040,8 @@ class EnrichResponse(BaseModel):
     latency_ms: float = 0
     items_enriched: int = 0
     fields_per_item: int = 0
+
+
 class CrawlActiveItem(BaseModel):
     """A single active crawl job entry for ``GET /v2/crawl/active``.
 
@@ -1077,3 +1120,10 @@ class CrawlErrorsResponse(BaseModel):
     errors: list[CrawlErrorItem] = Field(default_factory=list)
     robots_blocked: list[CrawlErrorItem] = Field(default_factory=list)
     error: str | None = None
+
+
+class BatchScrapeErrorsResponse(BaseModel):
+    """Response model for GET /v2/batch/scrape/{id}/errors."""
+
+    success: bool = True
+    errors: list[CrawlErrorItem] = Field(default_factory=list)

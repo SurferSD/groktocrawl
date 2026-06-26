@@ -26,7 +26,9 @@ from .models import (
     AgentStatusResponse,
     AnswerRequest,
     AnswerResponse,
+    BatchScrapeErrorsResponse,
     BatchScrapeRequest,
+    BatchScrapeStatusResponse,
     BrowserCreateRequest,
     BrowserCreateResponse,
     BrowserDeleteResponse,
@@ -817,6 +819,100 @@ async def create_batch_scrape(
     return CrawlCreateResponse(id=job_id)
 
 
+@router.get("/v2/batch/scrape/{job_id}", response_model=BatchScrapeStatusResponse)
+async def get_batch_scrape_status(
+    request: Request,
+    job_id: str,
+    offset: int = 0,
+) -> BatchScrapeStatusResponse:
+    """Get batch scrape job status and paginated results."""
+    store: JobStore = request.app.state.job_store
+    job = store.get_job(job_id)
+    if job is None:
+        raise NotFoundError(detail="Job not found", details={"job_id": job_id})
+    data = job.get("data") or {}
+    all_pages: list[dict] = data.get("pages", []) or []
+
+    created_at = job.get("created_at")
+    completed_at = job.get("completed_at")
+    duration: int | None = None
+    if created_at and completed_at:
+        try:
+            from datetime import datetime as _dt
+
+            created_dt = _dt.fromisoformat(created_at)
+            completed_dt = _dt.fromisoformat(completed_at)
+            duration = int((completed_dt - created_dt).total_seconds() * 1000)
+        except (ValueError, TypeError):
+            duration = None
+
+    completed_count = data.get("completed", 0)
+    credits_used = completed_count or len(all_pages)
+
+    # Pagination
+    _max_chunk_bytes = 10 * 1024 * 1024
+    _estimated_page_bytes = 10 * 1024
+    _max_pages_per_chunk = max(1, _max_chunk_bytes // _estimated_page_bytes)
+
+    chunk_pages = all_pages[offset:]
+    next_url: str | None = None
+
+    if len(chunk_pages) > _max_pages_per_chunk:
+        chunk_pages = all_pages[offset : offset + _max_pages_per_chunk]
+        next_offset = offset + _max_pages_per_chunk
+        if next_offset < len(all_pages):
+            scheme = request.url.scheme
+            host = request.url.netloc
+            path = request.url.path
+            next_url = f"{scheme}://{host}{path}?offset={next_offset}"
+    elif offset > 0 and not chunk_pages:
+        chunk_pages = []
+
+    return BatchScrapeStatusResponse(
+        status=job.get("status", "processing"),
+        completed=completed_count,
+        total=data.get("total", 0),
+        credits_used=credits_used,
+        data=chunk_pages or (all_pages if offset == 0 else []),
+        error=job.get("error"),
+        next=next_url,
+        created_at=created_at,
+        completed_at=completed_at,
+        expires_at=job.get("expires_at"),
+        duration=duration,
+    )
+
+
+@router.delete("/v2/batch/scrape/{job_id}", response_model=AgentCancelResponse)
+async def cancel_batch_scrape(request: Request, job_id: str) -> AgentCancelResponse:
+    """Cancel an in-progress batch scrape job."""
+    store: JobStore = request.app.state.job_store
+    if not store.cancel_job(job_id):
+        raise NotFoundError(
+            detail="Job not found or already completed", details={"job_id": job_id}
+        )
+    return AgentCancelResponse(success=True)
+
+
+@router.get(
+    "/v2/batch/scrape/{job_id}/errors", response_model=BatchScrapeErrorsResponse
+)
+async def get_batch_scrape_errors(
+    request: Request, job_id: str
+) -> BatchScrapeErrorsResponse:
+    """Get per-URL errors for a batch scrape job."""
+    store: JobStore = request.app.state.job_store
+    job = store.get_job(job_id)
+    if job is None:
+        raise NotFoundError(detail="Job not found", details={"job_id": job_id})
+    data = job.get("data") or {}
+    raw_errors: list[dict] = data.get("errors", [])
+    return BatchScrapeErrorsResponse(
+        success=True,
+        errors=[CrawlErrorItem(**e) for e in raw_errors],
+    )
+
+
 @router.post("/v1/search")
 async def search_v1(request: Request, body: SearchRequest) -> dict[str, Any]:
     """Firecrawl v1-compatible search endpoint.
@@ -1462,7 +1558,9 @@ async def create_monitor(body: MonitorCreateRequest) -> MonitorResponse:
     if body.monitor_type == "search":
         config = {
             "monitor_type": "search",
-            "search_config": body.search_config.model_dump() if body.search_config else {},
+            "search_config": body.search_config.model_dump()
+            if body.search_config
+            else {},
             "schedule": body.schedule,
             "webhook": body.webhook,
             "created_at": now,
