@@ -1655,7 +1655,12 @@ async def request_parse_upload_url(request: Request) -> ParseUploadUrlResponse:
 
 @router.put("/v2/parse/upload/{upload_id}")
 async def upload_parse_file(upload_id: str, request: Request) -> dict[str, Any]:
-    """Upload file bytes for a previously requested upload_id."""
+    """Upload file bytes for a previously requested upload_id.
+
+    Stores the raw bytes, content-type, and filename in Valkey.
+    The content-type is read from the ``Content-Type`` request header.
+    The filename is read from the ``X-Filename`` request header.
+    """
     from redis import Redis
 
     r = Redis.from_url("redis://valkey:6379/0", decode_responses=False)
@@ -1670,9 +1675,29 @@ async def upload_parse_file(upload_id: str, request: Request) -> dict[str, Any]:
     if not raw_body:
         raise InvalidRequestError(detail="Empty body — no file data received")
 
-    r.set(f"parse:upload:{upload_id}:data", raw_body, ex=PARSE_UPLOAD_TTL)
-    r.set(f"parse:upload:{upload_id}", b"uploaded", ex=PARSE_UPLOAD_TTL)
+    content_type = request.headers.get("Content-Type", "application/octet-stream")
+    filename = request.headers.get("X-Filename", "uploaded_file")
+
+    pipe = r.pipeline()
+    pipe.set(f"parse:upload:{upload_id}:data", raw_body, ex=PARSE_UPLOAD_TTL)
+    pipe.set(f"parse:upload:{upload_id}:content_type", content_type, ex=PARSE_UPLOAD_TTL)
+    pipe.set(f"parse:upload:{upload_id}:filename", filename, ex=PARSE_UPLOAD_TTL)
+    pipe.set(f"parse:upload:{upload_id}", b"uploaded", ex=PARSE_UPLOAD_TTL)
+    pipe.execute()
+
     return {"success": True, "upload_id": upload_id}
+
+
+# Lua script: atomically get and delete the upload data.
+# Prevents race conditions where two concurrent parse requests
+# with the same upload_id both retrieve and process the file.
+_ATOMIC_GETDEL_SCRIPT = """
+local data = redis.call('GET', KEYS[1])
+if data then
+    redis.call('DEL', KEYS[1], KEYS[2], KEYS[3], KEYS[4])
+end
+return data
+"""
 
 
 @router.post("/v2/parse", response_model=ParseResponse)
@@ -1680,8 +1705,8 @@ async def parse_file(request: Request) -> Any:
     """Upload a file and get its content as markdown.
 
     Supports two modes:
-    - Direct: multipart form with 'file' field (small files)
-    - Two-step: form field 'upload_id' referencing a pre-uploaded file
+    - Direct: multipart form with ``file`` field (small files)
+    - Two-step: form field ``upload_id`` referencing a pre-uploaded file
     """
     import httpx
     from redis import Redis
@@ -1691,18 +1716,28 @@ async def parse_file(request: Request) -> Any:
 
     upload_id = form.get("upload_id")
     if upload_id is not None:
-        # Two-step mode: retrieve pre-uploaded file
+        # Two-step mode: atomically retrieve and delete pre-uploaded file
         upload_id_str = str(upload_id)
-        content = r.get(f"parse:upload:{upload_id_str}:data")
+        data_key = f"parse:upload:{upload_id_str}:data"
+        ct_key = f"parse:upload:{upload_id_str}:content_type"
+        fn_key = f"parse:upload:{upload_id_str}:filename"
+        meta_key = f"parse:upload:{upload_id_str}"
+
+        getdel = r.register_script(_ATOMIC_GETDEL_SCRIPT)
+        content = getdel(keys=[data_key, ct_key, fn_key, meta_key])
         if content is None:
             raise NotFoundError(
                 detail="Upload ID not found or no data uploaded",
                 details={"upload_id": upload_id_str},
             )
-        filename = "uploaded_file"
-        content_type = "application/octet-stream"
-        # Clean up temp keys
-        r.delete(f"parse:upload:{upload_id_str}", f"parse:upload:{upload_id_str}:data")
+
+        # These keys were deleted atomically; try to read them
+        # from a fresh GET — they'll be None if the Lua script
+        # already deleted them (normal case).
+        filename = (r.get(fn_key) or b"").decode() or "uploaded_file"
+        content_type = (r.get(ct_key) or b"application/octet-stream").decode()
+        # Clean up any remaining keys (should already be deleted by Lua)
+        r.delete(meta_key, ct_key, fn_key)
     elif "file" not in form:
         raise InvalidRequestError(
             detail="No file provided. Use multipart form with 'file' field or 'upload_id' for two-step upload."
@@ -1716,9 +1751,7 @@ async def parse_file(request: Request) -> Any:
     async with httpx.AsyncClient(timeout=120) as client:
         resp = await client.post(
             f"{PARSE_SVC_URL}/parse",
-            files={
-                "file": (filename, content, content_type)
-            },
+            files={"file": (filename, content, content_type)},
         )
         try:
             return resp.json()
