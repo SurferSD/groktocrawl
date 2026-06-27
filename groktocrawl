@@ -17,6 +17,7 @@ Commands:
   active           List active crawl jobs
   monitor          Manage change monitors
   parse            Parse a document file (PDF, EPUB, DOCX, etc.) to markdown
+  parse-upload     Upload a file for two-step parsing
   generate-llmstxt Generate an llms.txt for a website
   answer           Answer a question with grounded citations
   batch-scrape     Manage batch scrape jobs (status, cancel, errors)
@@ -787,6 +788,65 @@ class Client:
             return {"dry_run": True, "method": "POST", "url": url, "file": filepath}
         with open(filepath, "rb") as f:
             resp = requests.post(url, files={"file": f}, timeout=120)
+        if resp.status_code >= 400:
+            try:
+                body = resp.json()
+            except ValueError:
+                body = {"detail": resp.text[:200]}
+            raise ApiError(
+                f"Parse error ({resp.status_code}): {body.get('detail', body.get('error', str(body)))}"
+            )
+        return resp.json()
+
+    def parse_upload_file(self, upload_id: str, filepath: str) -> dict[str, Any]:
+        """Upload a file for two-step parsing via PUT /v2/parse/upload/{upload_id}."""
+        import requests
+        import mimetypes
+
+        url = self._url(f"/parse/upload/{upload_id}")
+        if self.dry_run:
+            return {"dry_run": True, "method": "PUT", "url": url, "file": filepath}
+
+        filename = os.path.basename(filepath)
+        content_type, _ = (
+            mimetypes.guess_type(filepath) or "application/octet-stream"
+        )
+
+        with open(filepath, "rb") as f:
+            data = f.read()
+
+        resp = requests.put(
+            url,
+            data=data,
+            headers={
+                "Content-Type": content_type,
+                "X-Filename": filename,
+            },
+            timeout=120,
+        )
+        if resp.status_code >= 400:
+            try:
+                body = resp.json()
+            except ValueError:
+                body = {"detail": resp.text[:200]}
+            raise ApiError(
+                f"Upload error ({resp.status_code}): {body.get('detail', body.get('error', str(body)))}"
+            )
+        return resp.json()
+
+    def parse_with_upload_id(self, upload_id: str) -> dict[str, Any]:
+        """Parse a pre-uploaded file via upload_id."""
+        import requests
+
+        url = self._url("/parse")
+        if self.dry_run:
+            return {
+                "dry_run": True,
+                "method": "POST",
+                "url": url,
+                "upload_id": upload_id,
+            }
+        resp = requests.post(url, data={"upload_id": upload_id}, timeout=120)
         if resp.status_code >= 400:
             try:
                 body = resp.json()
@@ -1957,6 +2017,35 @@ def cmd_monitor(client: Client, args: argparse.Namespace) -> None:
 
 def cmd_parse(client: Client, args: argparse.Namespace) -> None:
     """Parse a document file to markdown via the server."""
+    if args.upload_id:
+        if client.dry_run:
+            emit(
+                f"[dry-run] Would parse upload_id={args.upload_id}",
+                {"dry_run": True, "command": "parse", "upload_id": args.upload_id},
+            )
+            return
+        try:
+            result = client.parse_with_upload_id(args.upload_id)
+        except ApiError as e:
+            die(str(e))
+        if not result.get("success"):
+            die(f"Parse failed: {result.get('error', 'unknown error')}")
+        data = result.get("data", {})
+        markdown = data.get("markdown", data.get("text", ""))
+        if JSON_OUTPUT:
+            emit("", result)
+            return
+        if args.output:
+            with open(args.output, "w") as f:
+                f.write(markdown)
+            log(f"Parsed content ({len(markdown)} chars) written to {args.output}")
+        else:
+            print(markdown.rstrip())
+        return
+
+    if not args.filepath:
+        die("Usage: groktocrawl parse <filepath> or groktocrawl parse --upload-id <id>")
+
     if client.dry_run:
         emit(
             f"[dry-run] Would parse {args.filepath}",
@@ -1988,6 +2077,42 @@ def cmd_parse(client: Client, args: argparse.Namespace) -> None:
         log(f"Parsed content ({len(markdown)} chars) written to {args.output}")
     else:
         print(markdown.rstrip())
+
+
+def cmd_parse_upload(client: Client, args: argparse.Namespace) -> None:
+    """Upload a file for two-step parsing via PUT /v2/parse/upload/{upload_id}."""
+    if client.dry_run:
+        emit(
+            f"[dry-run] Would upload {args.file} for upload_id={args.upload_id}",
+            {
+                "dry_run": True,
+                "command": "parse-upload",
+                "upload_id": args.upload_id,
+                "file": args.file,
+            },
+        )
+        return
+
+    if not os.path.isfile(args.file):
+        die(f"File not found: {args.file}")
+
+    try:
+        result = client.parse_upload_file(args.upload_id, args.file)
+    except ApiError as e:
+        die(str(e))
+
+    if JSON_OUTPUT:
+        emit("", result)
+        return
+
+    success = result.get("success", True)
+    upload_id = result.get("upload_id", args.upload_id)
+    size = result.get("size", result.get("bytes", "?"))
+    expires_at = result.get("expires_at", result.get("expiresAt", "unknown"))
+    if success:
+        log(f"Uploaded {args.file} → upload_id={upload_id} ({size} bytes, expires: {expires_at})")
+    else:
+        die(f"Upload failed: {result.get('error', 'unknown error')}")
 
 
 def cmd_generate_llmstxt(client: Client, args: argparse.Namespace) -> None:
@@ -2341,9 +2466,23 @@ def make_parser() -> argparse.ArgumentParser:
         "parse",
         help="Parse a document file (PDF, EPUB, DOCX, etc.) to markdown via the server",
     )
-    p_parse.add_argument("filepath", help="Path to the file to parse")
+    p_parse.add_argument(
+        "filepath", nargs="?", help="Path to the file to parse"
+    )
     p_parse.add_argument(
         "-o", "--output", help="Write output to file instead of stdout"
+    )
+    p_parse.add_argument(
+        "--upload-id", help="Parse a pre-uploaded file by upload ID"
+    )
+
+    # --- Parse Upload ---
+    p_parse_upload = subparsers.add_parser(
+        "parse-upload", help="Upload a file for two-step parsing"
+    )
+    p_parse_upload.add_argument("upload_id", help="Upload ID (client-chosen unique string)")
+    p_parse_upload.add_argument(
+        "--file", required=True, help="Path to the file to upload"
     )
 
     # --- Generate llms.txt ---
@@ -2489,6 +2628,7 @@ def main() -> None:
         "active": cmd_active,
         "monitor": cmd_monitor,
         "parse": cmd_parse,
+        "parse-upload": cmd_parse_upload,
         "generate-llmstxt": cmd_generate_llmstxt,
         "answer": cmd_answer,
         "batch-scrape": cmd_batch_scrape,

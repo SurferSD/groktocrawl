@@ -632,3 +632,398 @@ class TestCmdBatchScrape:
         assert "Error:" in stderr
         assert "Cannot connect" in stderr
         assert "Traceback" not in stderr
+
+
+# ── Client.parse_upload_file / parse_with_upload_id tests ──────────────────────
+
+
+class TestClientParseUpload:
+    """Tests for Client.parse_upload_file() and Client.parse_with_upload_id()."""
+
+    def test_parse_upload_file_sends_correct_data(self, client):
+        """parse_upload_file sends PUT with correct URL, headers, and body."""
+
+        def _fake_put(url, data=None, headers=None, timeout=None):
+            assert "/parse/upload/my-upload-1" in url
+            assert headers["Content-Type"] == "application/pdf"
+            # X-Filename should match the temp file's basename
+            assert headers["X-Filename"].endswith(".pdf")
+            assert data == b"fake pdf content"
+
+            class FakeResp:
+                status_code = 200
+
+                def json(self):
+                    return {"success": True, "upload_id": "my-upload-1", "size": 12345}
+
+            return FakeResp()
+
+        import requests as _requests_module
+
+        with patch.object(_requests_module, "put", side_effect=_fake_put):
+            import tempfile
+
+            with tempfile.NamedTemporaryFile(
+                suffix=".pdf", delete=False, mode="wb"
+            ) as tmp:
+                tmp.write(b"fake pdf content")
+                tmp_path = tmp.name
+            try:
+                result = client.parse_upload_file("my-upload-1", tmp_path)
+                assert result["success"] is True
+                assert result["upload_id"] == "my-upload-1"
+            finally:
+                os.unlink(tmp_path)
+
+    def test_parse_with_upload_id_sends_form_field(self, client):
+        """parse_with_upload_id sends POST with upload_id in form data."""
+
+        def _fake_post(url, data=None, timeout=None):
+            assert "/parse" in url
+            assert data == {"upload_id": "my-upload-2"}
+
+            class FakeResp:
+                status_code = 200
+
+                def json(self):
+                    return {
+                        "success": True,
+                        "data": {"markdown": "# Parsed content"},
+                    }
+
+            return FakeResp()
+
+        import requests as _requests_module
+
+        with patch.object(_requests_module, "post", side_effect=_fake_post):
+            result = client.parse_with_upload_id("my-upload-2")
+            assert result["success"] is True
+            assert result["data"]["markdown"] == "# Parsed content"
+
+    def test_parse_upload_file_dry_run(self, client):
+        """parse_upload_file with dry_run returns preview dict."""
+        client.dry_run = True
+        result = client.parse_upload_file("dry-1", "/some/file.pdf")
+        assert result["dry_run"] is True
+        assert result["method"] == "PUT"
+        assert result["file"] == "/some/file.pdf"
+        assert "/parse/upload/dry-1" in result["url"]
+
+    def test_parse_with_upload_id_dry_run(self, client):
+        """parse_with_upload_id with dry_run returns preview dict."""
+        client.dry_run = True
+        result = client.parse_with_upload_id("dry-2")
+        assert result["dry_run"] is True
+        assert result["method"] == "POST"
+        assert result["upload_id"] == "dry-2"
+
+    def test_parse_upload_file_api_error(self, client):
+        """parse_upload_file raises ApiError on 4xx response."""
+        api_error_cls = _cli_ns["ApiError"]
+
+        def _fake_put(url, data=None, headers=None, timeout=None):
+            class FakeResp:
+                status_code = 404
+
+                def json(self):
+                    return {"detail": "Upload not found"}
+
+            return FakeResp()
+
+        import requests as _requests_module
+
+        with patch.object(_requests_module, "put", side_effect=_fake_put):
+            import tempfile
+
+            with tempfile.NamedTemporaryFile(delete=False) as tmp:
+                tmp.write(b"test")
+                tmp_path = tmp.name
+            try:
+                with pytest.raises(api_error_cls) as exc_info:
+                    client.parse_upload_file("bad-1", tmp_path)
+                assert "Upload not found" in str(exc_info.value)
+            finally:
+                os.unlink(tmp_path)
+
+    def test_parse_with_upload_id_api_error(self, client):
+        """parse_with_upload_id raises ApiError on 4xx response."""
+        api_error_cls = _cli_ns["ApiError"]
+
+        def _fake_post(url, data=None, timeout=None):
+            class FakeResp:
+                status_code = 400
+
+                def json(self):
+                    return {"detail": "Invalid upload_id"}
+
+            return FakeResp()
+
+        import requests as _requests_module
+
+        with patch.object(_requests_module, "post", side_effect=_fake_post):
+            with pytest.raises(api_error_cls) as exc_info:
+                client.parse_with_upload_id("bad-2")
+            assert "Invalid upload_id" in str(exc_info.value)
+
+
+# ── cmd_parse_upload handler tests ────────────────────────────────────────────
+
+
+class TestCmdParseUpload:
+    """Tests for the cmd_parse_upload() handler function."""
+
+    def test_cmd_parse_upload_calls_client(self):
+        """cmd_parse_upload calls parse_upload_file with correct args."""
+        cmd_parse_upload = _cli_ns["cmd_parse_upload"]
+        import tempfile
+
+        with tempfile.NamedTemporaryFile(delete=False) as tmp:
+            tmp.write(b"hello")
+            tmp_path = tmp.name
+        try:
+            mock_args = MagicMock()
+            mock_args.upload_id = "up-1"
+            mock_args.file = tmp_path
+            mock_args.dry_run = False
+            mock_client = MagicMock()
+            mock_client.dry_run = False
+            mock_client.parse_upload_file.return_value = {
+                "success": True,
+                "upload_id": "up-1",
+                "size": 5,
+            }
+            cmd_parse_upload(mock_client, mock_args)
+            mock_client.parse_upload_file.assert_called_once_with("up-1", tmp_path)
+        finally:
+            os.unlink(tmp_path)
+
+    def test_cmd_parse_upload_json_output(self):
+        """cmd_parse_upload with JSON_OUTPUT produces valid JSON."""
+        cmd_parse_upload = _cli_ns["cmd_parse_upload"]
+        import tempfile
+
+        with tempfile.NamedTemporaryFile(delete=False) as tmp:
+            tmp.write(b"hello world")
+            tmp_path = tmp.name
+        try:
+            mock_args = MagicMock()
+            mock_args.upload_id = "up-json-1"
+            mock_args.file = tmp_path
+            mock_args.dry_run = False
+            mock_client = MagicMock()
+            mock_client.dry_run = False
+            mock_client.parse_upload_file.return_value = {
+                "success": True,
+                "upload_id": "up-json-1",
+                "size": 11,
+            }
+            original_json = _cli_ns["JSON_OUTPUT"]
+            _cli_ns["JSON_OUTPUT"] = True
+            try:
+                stdout = _capture_stdout(cmd_parse_upload, mock_client, mock_args)
+            finally:
+                _cli_ns["JSON_OUTPUT"] = original_json
+            parsed = json.loads(stdout.strip())
+            assert parsed["success"] is True
+            assert parsed["upload_id"] == "up-json-1"
+        finally:
+            os.unlink(tmp_path)
+
+    def test_cmd_parse_upload_file_not_found(self):
+        """cmd_parse_upload exits with error when file does not exist."""
+        cmd_parse_upload = _cli_ns["cmd_parse_upload"]
+        mock_args = MagicMock()
+        mock_args.upload_id = "up-1"
+        mock_args.file = "/nonexistent/file.pdf"
+        mock_args.dry_run = False
+        mock_client = MagicMock()
+        mock_client.dry_run = False
+        stderr = _capture_stderr(cmd_parse_upload, mock_client, mock_args)
+        assert "File not found" in stderr
+        assert "/nonexistent/file.pdf" in stderr
+
+    def test_cmd_parse_upload_dry_run(self):
+        """cmd_parse_upload with dry_run emits preview and returns."""
+        cmd_parse_upload = _cli_ns["cmd_parse_upload"]
+        mock_args = MagicMock()
+        mock_args.upload_id = "dry-up-1"
+        mock_args.file = "/some/file.pdf"
+        mock_args.dry_run = True
+        mock_client = MagicMock()
+        mock_client.dry_run = True
+        stdout = _capture_stdout(cmd_parse_upload, mock_client, mock_args)
+        assert "dry-run" in stdout.lower() or "Would upload" in stdout
+
+    def test_cmd_parse_upload_api_error(self):
+        """cmd_parse_upload exits cleanly on ApiError."""
+        cmd_parse_upload = _cli_ns["cmd_parse_upload"]
+        api_error_cls = _cli_ns["ApiError"]
+        import tempfile
+
+        with tempfile.NamedTemporaryFile(delete=False) as tmp:
+            tmp.write(b"test")
+            tmp_path = tmp.name
+        try:
+            mock_args = MagicMock()
+            mock_args.upload_id = "up-err-1"
+            mock_args.file = tmp_path
+            mock_args.dry_run = False
+            mock_client = MagicMock()
+            mock_client.dry_run = False
+            mock_client.parse_upload_file.side_effect = api_error_cls(
+                "Upload error (500): Internal server error"
+            )
+            stderr = _capture_stderr(cmd_parse_upload, mock_client, mock_args)
+            assert "Error:" in stderr
+            assert "Upload error" in stderr
+            assert "Traceback" not in stderr
+        finally:
+            os.unlink(tmp_path)
+
+
+# ── parse --upload-id flag tests ──────────────────────────────────────────────
+
+
+class TestCmdParseWithUploadId:
+    """Tests for the parse command with --upload-id flag."""
+
+    def test_cmd_parse_with_upload_id_calls_client(self):
+        """parse --upload-id calls parse_with_upload_id."""
+        cmd_parse = _cli_ns["cmd_parse"]
+        mock_args = MagicMock()
+        mock_args.upload_id = "pu-1"
+        mock_args.filepath = None
+        mock_args.output = None
+        mock_args.dry_run = False
+        mock_client = MagicMock()
+        mock_client.dry_run = False
+        mock_client.parse_with_upload_id.return_value = {
+            "success": True,
+            "data": {"markdown": "# Hello"},
+        }
+        stdout = _capture_stdout(cmd_parse, mock_client, mock_args)
+        mock_client.parse_with_upload_id.assert_called_once_with("pu-1")
+        assert "# Hello" in stdout
+
+    def test_cmd_parse_with_upload_id_json_output(self):
+        """parse --upload-id with JSON_OUTPUT produces valid JSON."""
+        cmd_parse = _cli_ns["cmd_parse"]
+        mock_args = MagicMock()
+        mock_args.upload_id = "pu-json-1"
+        mock_args.filepath = None
+        mock_args.output = None
+        mock_args.dry_run = False
+        mock_client = MagicMock()
+        mock_client.dry_run = False
+        mock_client.parse_with_upload_id.return_value = {
+            "success": True,
+            "data": {"markdown": "# Hi"},
+        }
+        original_json = _cli_ns["JSON_OUTPUT"]
+        _cli_ns["JSON_OUTPUT"] = True
+        try:
+            stdout = _capture_stdout(cmd_parse, mock_client, mock_args)
+        finally:
+            _cli_ns["JSON_OUTPUT"] = original_json
+        parsed = json.loads(stdout.strip())
+        assert parsed["success"] is True
+        assert parsed["data"]["markdown"] == "# Hi"
+
+    def test_cmd_parse_with_upload_id_api_error(self):
+        """parse --upload-id exits cleanly on ApiError."""
+        cmd_parse = _cli_ns["cmd_parse"]
+        api_error_cls = _cli_ns["ApiError"]
+        mock_args = MagicMock()
+        mock_args.upload_id = "pu-err-1"
+        mock_args.filepath = None
+        mock_args.output = None
+        mock_args.dry_run = False
+        mock_client = MagicMock()
+        mock_client.dry_run = False
+        mock_client.parse_with_upload_id.side_effect = api_error_cls(
+            "Parse error (404): Upload not found"
+        )
+        stderr = _capture_stderr(cmd_parse, mock_client, mock_args)
+        assert "Error:" in stderr
+        assert "Upload not found" in stderr
+        assert "Traceback" not in stderr
+
+    def test_cmd_parse_with_upload_id_dry_run(self):
+        """parse --upload-id with dry_run emits preview."""
+        cmd_parse = _cli_ns["cmd_parse"]
+        mock_args = MagicMock()
+        mock_args.upload_id = "pu-dry-1"
+        mock_args.filepath = None
+        mock_args.output = None
+        mock_args.dry_run = True
+        mock_client = MagicMock()
+        mock_client.dry_run = True
+        stdout = _capture_stdout(cmd_parse, mock_client, mock_args)
+        assert "pu-dry-1" in stdout or "dry-run" in stdout.lower()
+
+
+# ── parse-upload parser tests ─────────────────────────────────────────────────
+
+
+class TestParseUploadParser:
+    """Tests for the parse-upload subcommand argument parser."""
+
+    def test_help_contains_parse_upload(self):
+        """Top-level --help lists parse-upload command."""
+        make_parser = _cli_ns["make_parser"]
+        parser = make_parser()
+        from contextlib import redirect_stdout
+        from io import StringIO
+
+        stdout = StringIO()
+        with pytest.raises(SystemExit):
+            with redirect_stdout(stdout):
+                parser.parse_args(["--help"])
+        help_text = stdout.getvalue()
+        assert "parse-upload" in help_text
+
+    def test_parse_upload_args(self):
+        """parse-upload parses upload_id and --file correctly."""
+        make_parser = _cli_ns["make_parser"]
+        parser = make_parser()
+        args = parser.parse_args(
+            ["parse-upload", "my-id", "--file", "/tmp/report.pdf"]
+        )
+        assert args.upload_id == "my-id"
+        assert args.file == "/tmp/report.pdf"
+        assert args.command == "parse-upload"
+
+    def test_parse_upload_file_required(self):
+        """parse-upload --file is required."""
+        make_parser = _cli_ns["make_parser"]
+        parser = make_parser()
+        from contextlib import redirect_stderr
+        from io import StringIO
+
+        stderr = StringIO()
+        with pytest.raises(SystemExit):
+            with redirect_stderr(stderr):
+                parser.parse_args(["parse-upload", "my-id"])
+        assert "error" in stderr.getvalue().lower() or "required" in stderr.getvalue().lower()
+
+    def test_parse_with_upload_id_flag(self):
+        """parse --upload-id is parsed correctly."""
+        make_parser = _cli_ns["make_parser"]
+        parser = make_parser()
+        args = parser.parse_args(["parse", "--upload-id", "abc-123"])
+        assert args.upload_id == "abc-123"
+        assert args.filepath is None
+
+    def test_parse_upload_id_help(self):
+        """parse --help shows --upload-id flag."""
+        make_parser = _cli_ns["make_parser"]
+        parser = make_parser()
+        from contextlib import redirect_stdout
+        from io import StringIO
+
+        stdout = StringIO()
+        with pytest.raises(SystemExit):
+            with redirect_stdout(stdout):
+                parser.parse_args(["parse", "--help"])
+        help_text = stdout.getvalue()
+        assert "--upload-id" in help_text
