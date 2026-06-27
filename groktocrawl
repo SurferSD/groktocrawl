@@ -808,9 +808,8 @@ class Client:
             return {"dry_run": True, "method": "PUT", "url": url, "file": filepath}
 
         filename = os.path.basename(filepath)
-        content_type, _ = (
-            mimetypes.guess_type(filepath) or "application/octet-stream"
-        )
+        guessed_type, _ = mimetypes.guess_type(filepath) or (None, None)
+        content_type = guessed_type or "application/octet-stream"
 
         with open(filepath, "rb") as f:
             data = f.read()
@@ -2105,14 +2104,8 @@ def cmd_parse_upload(client: Client, args: argparse.Namespace) -> None:
         emit("", result)
         return
 
-    success = result.get("success", True)
     upload_id = result.get("upload_id", args.upload_id)
-    size = result.get("size", result.get("bytes", "?"))
-    expires_at = result.get("expires_at", result.get("expiresAt", "unknown"))
-    if success:
-        log(f"Uploaded {args.file} → upload_id={upload_id} ({size} bytes, expires: {expires_at})")
-    else:
-        die(f"Upload failed: {result.get('error', 'unknown error')}")
+    log(f"Uploaded {args.file} → upload_id={upload_id}")
 
 
 def cmd_generate_llmstxt(client: Client, args: argparse.Namespace) -> None:
