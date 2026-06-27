@@ -109,6 +109,10 @@ def path_to_command(path: str) -> str | None:
 
 def main() -> int:
     api_paths = extract_api_endpoints()
+    if not api_paths:
+        print("ERROR: No /v2/ API endpoints found in api.py — check the route regex")
+        return 1
+
     cli_commands = extract_cli_commands()
 
     gaps: list[str] = []
