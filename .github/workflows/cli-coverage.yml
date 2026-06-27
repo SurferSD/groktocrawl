@@ -1,0 +1,32 @@
+# CLI Coverage Validation
+#
+# Verifies that every /v2/ API endpoint in agent-svc has a corresponding
+# CLI subcommand in the groktocrawl script. Prevents the recurring pattern
+# of API endpoints landing without CLI access.
+#
+# See ADR-0039: docs/adr/0039-api-cli-surface-ship-together.md
+#
+# Runs on PRs that modify the API or CLI files, and on pushes to main.
+
+name: CLI Coverage
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "agent-svc/agent/api.py"
+      - "groktocrawl"
+  pull_request:
+    branches: [main]
+    paths:
+      - "agent-svc/agent/api.py"
+      - "groktocrawl"
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Check CLI coverage vs API endpoints
+        run: python3 scripts/check-cli-coverage.py

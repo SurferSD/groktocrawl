@@ -27,6 +27,7 @@
 - [ ] My code follows the project's coding conventions (type hints, async/await, minimal deps)
 - [ ] I have updated the relevant documentation (README, AGENTS.md, CHANGELOG)
 - [ ] I have added tests that prove my fix is effective or my feature works
+- [ ] New API endpoints have a corresponding CLI subcommand (see ADR-0039)
 - [ ] If adding a new async endpoint, it accepts a `webhook` field and fires on completion/failure
 
 ## Notes for Reviewers

@@ -57,5 +57,6 @@ An Architecture Decision Record captures an important architectural decision mad
 | 0036 | [Split Scraper fetch.py into Focused Modules](0036-split-scraper-fetch-modules.md) | proposed |
 | 0037 | [Split Semantic Service app.py into Focused Modules](0037-split-semantic-svc-app-modules.md) | proposed |
 | 0038 | [Crawl Engine — BFS Orchestrator with Shared Link Extraction](0038-crawl-engine.md) | accepted |
+| 0039 | [API-CLI Surface Must Ship Together](0039-api-cli-surface-ship-together.md) | proposed |
 
 See [CONTRIBUTING.md](../../CONTRIBUTING.md) for the full ADR workflow: when to write an ADR, how to number it, and how to get it reviewed in a PR.
