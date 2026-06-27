@@ -2,6 +2,12 @@
 
 All notable changes to GroktoCrawl are documented in this file.
 
+## [Unreleased]
+
+### Added
+
+- **CLI: `batch-scrape` subcommand.** `groktocrawl batch-scrape <job_id>` shows job status with paginated results; `--cancel` cancels an in-progress batch; `--errors` lists per-URL failures. Closes the last CLI-vs-API gap for batch scrape operations.
+
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 

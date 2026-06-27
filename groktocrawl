@@ -19,6 +19,7 @@ Commands:
   parse            Parse a document file (PDF, EPUB, DOCX, etc.) to markdown
   generate-llmstxt Generate an llms.txt for a website
   answer           Answer a question with grounded citations
+  batch-scrape     Manage batch scrape jobs (status, cancel, errors)
 Global flags:
   --server <url>   API URL (default: GROKTOCRAWL_API_URL env or http://localhost:8080)
   --json           Machine-readable JSON output
@@ -609,6 +610,15 @@ class Client:
 
     def get_active_crawls(self) -> dict[str, Any]:
         return self._request("GET", "/crawl/active")
+
+    def batch_status(self, job_id: str) -> dict[str, Any]:
+        return self._request("GET", f"/batch/scrape/{job_id}")
+
+    def cancel_batch(self, job_id: str) -> dict[str, Any]:
+        return self._request("DELETE", f"/batch/scrape/{job_id}")
+
+    def batch_errors(self, job_id: str) -> dict[str, Any]:
+        return self._request("GET", f"/batch/scrape/{job_id}/errors")
 
     def create_agent(
         self,
@@ -1713,6 +1723,77 @@ def cmd_active(client: Client, args: argparse.Namespace) -> None:
         print(f"  {job.get('id', '?')}  [{job.get('status', '?')}]")
 
 
+def cmd_batch_scrape(client: Client, args: argparse.Namespace) -> None:
+    """Show batch scrape job status, cancel, or list errors."""
+    if client.dry_run:
+        emit(
+            "[dry-run] Would check batch scrape",
+            {"dry_run": True, "command": "batch-scrape", "job_id": args.job_id},
+        )
+        return
+
+    try:
+        if args.cancel:
+            result = client.cancel_batch(args.job_id)
+            if JSON_OUTPUT:
+                emit("", result)
+            else:
+                log(f"Batch scrape {args.job_id} cancelled")
+            return
+
+        if args.errors:
+            result = client.batch_errors(args.job_id)
+            if JSON_OUTPUT:
+                emit("", result)
+            else:
+                errors = result.get("errors", [])
+                if not errors:
+                    log("No errors")
+                    return
+                print(f"Errors for batch scrape {args.job_id} ({len(errors)} total):\n")
+                for err in errors:
+                    url = err.get("url", "?")
+                    msg = err.get("error", "?")
+                    print(f"  {url}")
+                    print(f"    Error: {msg}")
+            return
+
+        # Default: show status
+        result = client.batch_status(args.job_id)
+    except ApiError as e:
+        die(str(e))
+
+    if JSON_OUTPUT:
+        emit("", result)
+        return
+
+    status = result.get("status", "unknown")
+    completed = result.get("completed", 0)
+    total = result.get("total", 0)
+    duration = result.get("duration")
+    created_at = result.get("created_at")
+    completed_at = result.get("completed_at")
+    credits = result.get("credits_used")
+    error = result.get("error")
+    has_more = result.get("next") is not None
+
+    print(f"Batch scrape {args.job_id}")
+    print(f"  Status:       {status}")
+    print(f"  Progress:     {completed}/{total} pages")
+    if credits is not None:
+        print(f"  Credits used: {credits}")
+    if duration:
+        print(f"  Duration:     {duration}ms")
+    if created_at:
+        print(f"  Created:      {created_at}")
+    if completed_at:
+        print(f"  Completed:    {completed_at}")
+    if error:
+        print(f"  Error:        {error}")
+    if has_more:
+        print("  (Results truncated — use --json for full data)")
+
+
 def cmd_monitor(client: Client, args: argparse.Namespace) -> None:
     """Manage change monitors."""
     action = args.command_action
@@ -1751,11 +1832,11 @@ def cmd_monitor(client: Client, args: argparse.Namespace) -> None:
             mt = result.get("monitor_type", "scrape")
             if mt == "search":
                 sc = result.get("search_config", {})
-                log(f"  Type:     search")
+                log("  Type:     search")
                 log(f"  Query:    {sc.get('query', '')}")
                 log(f"  Results:  {sc.get('numResults', 10)}")
             else:
-                log(f"  Type:     scrape")
+                log("  Type:     scrape")
                 log(f"  URL:      {result.get('url', '')}")
             log(f"  Schedule: {args.schedule}")
 
@@ -2325,6 +2406,18 @@ def make_parser() -> argparse.ArgumentParser:
         help="Search mode: qdrant (local vector index) or web (open web search + rerank)",
     )
 
+    p_batch_scrape = subparsers.add_parser(
+        "batch-scrape",
+        help="Manage batch scrape jobs (status, cancel, errors)",
+    )
+    p_batch_scrape.add_argument("job_id", help="Batch scrape job ID")
+    p_batch_scrape.add_argument(
+        "--cancel", action="store_true", help="Cancel the batch scrape"
+    )
+    p_batch_scrape.add_argument(
+        "--errors", action="store_true", help="List per-URL errors"
+    )
+
     p_llmstxt = subparsers.add_parser(
         "generate-llmstxt", help="Generate an llms.txt for a website"
     )
@@ -2398,6 +2491,7 @@ def main() -> None:
         "parse": cmd_parse,
         "generate-llmstxt": cmd_generate_llmstxt,
         "answer": cmd_answer,
+        "batch-scrape": cmd_batch_scrape,
         "enrich": cmd_enrich,
         "find-similar": cmd_find_similar,
     }

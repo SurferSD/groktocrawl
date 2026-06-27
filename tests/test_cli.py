@@ -515,3 +515,120 @@ class TestCLISubprocess:
         )
         assert result.returncode == 0
         assert "crawl" in result.stdout
+
+
+# ── cmd_batch_scrape handler tests ────────────────────────────────────────────
+
+
+class TestCmdBatchScrape:
+    """Tests for the cmd_batch_scrape() handler function."""
+
+    def test_default_shows_status(self):
+        """cmd_batch_scrape calls batch_status() when no flag is given."""
+        cmd_batch_scrape = _cli_ns["cmd_batch_scrape"]
+        mock_args = MagicMock()
+        mock_args.job_id = "batch-job-1"
+        mock_args.cancel = False
+        mock_args.errors = False
+        mock_args.dry_run = False
+        mock_client = MagicMock()
+        mock_client.dry_run = False
+        mock_client.batch_status.return_value = {
+            "success": True,
+            "status": "completed",
+            "completed": 3,
+            "total": 3,
+            "data": [
+                {"url": "http://example.com/1", "markdown": "# Page 1"},
+                {"url": "http://example.com/2", "markdown": "# Page 2"},
+                {"url": "http://example.com/3", "markdown": "# Page 3"},
+            ],
+        }
+        cmd_batch_scrape(mock_client, mock_args)
+        mock_client.batch_status.assert_called_once_with("batch-job-1")
+
+    def test_cancel_flag(self):
+        """--cancel calls cancel_batch()."""
+        cmd_batch_scrape = _cli_ns["cmd_batch_scrape"]
+        mock_args = MagicMock()
+        mock_args.job_id = "batch-job-2"
+        mock_args.cancel = True
+        mock_args.errors = False
+        mock_args.dry_run = False
+        mock_client = MagicMock()
+        mock_client.dry_run = False
+        mock_client.cancel_batch.return_value = {"success": True}
+        cmd_batch_scrape(mock_client, mock_args)
+        mock_client.cancel_batch.assert_called_once_with("batch-job-2")
+        mock_client.batch_status.assert_not_called()
+
+    def test_errors_flag(self):
+        """--errors calls batch_errors()."""
+        cmd_batch_scrape = _cli_ns["cmd_batch_scrape"]
+        mock_args = MagicMock()
+        mock_args.job_id = "batch-job-3"
+        mock_args.cancel = False
+        mock_args.errors = True
+        mock_args.dry_run = False
+        mock_client = MagicMock()
+        mock_client.dry_run = False
+        mock_client.batch_errors.return_value = {
+            "success": True,
+            "errors": [
+                {"url": "http://example.com/bad", "error": "timeout"},
+            ],
+        }
+        cmd_batch_scrape(mock_client, mock_args)
+        mock_client.batch_errors.assert_called_once_with("batch-job-3")
+        mock_client.batch_status.assert_not_called()
+
+    def test_json_output(self):
+        """JSON_OUTPUT=True produces valid JSON."""
+        cmd_batch_scrape = _cli_ns["cmd_batch_scrape"]
+        mock_args = MagicMock()
+        mock_args.job_id = "batch-json-1"
+        mock_args.cancel = False
+        mock_args.errors = False
+        mock_args.dry_run = False
+        mock_client = MagicMock()
+        mock_client.dry_run = False
+        mock_client.batch_status.return_value = {
+            "success": True,
+            "status": "completed",
+            "completed": 2,
+            "total": 2,
+            "data": [
+                {"url": "http://example.com/a", "markdown": "# A"},
+                {"url": "http://example.com/b", "markdown": "# B"},
+            ],
+        }
+        original_json = _cli_ns["JSON_OUTPUT"]
+        _cli_ns["JSON_OUTPUT"] = True
+        try:
+            stdout = _capture_stdout(cmd_batch_scrape, mock_client, mock_args)
+        finally:
+            _cli_ns["JSON_OUTPUT"] = original_json
+        output = stdout.strip()
+        parsed = json.loads(output)
+        assert parsed["status"] == "completed"
+        assert parsed["completed"] == 2
+        assert parsed["total"] == 2
+
+    def test_api_error_handled(self):
+        """ApiError in cmd_batch_scrape exits with clean error message."""
+        cmd_batch_scrape = _cli_ns["cmd_batch_scrape"]
+        api_error_cls = _cli_ns["ApiError"]
+        mock_args = MagicMock()
+        mock_args.job_id = "batch-err-1"
+        mock_args.cancel = False
+        mock_args.errors = False
+        mock_args.dry_run = False
+        mock_client = MagicMock()
+        mock_client.dry_run = False
+        mock_client.batch_status.side_effect = api_error_cls(
+            "Cannot connect to http://test-server:8080: Connection refused"
+        )
+        stderr = _capture_stderr(cmd_batch_scrape, mock_client, mock_args)
+        assert "Error:" in stderr
+        assert "Cannot connect" in stderr
+        assert "Traceback" not in stderr
