@@ -1463,7 +1463,9 @@ async def create_monitor(body: MonitorCreateRequest) -> MonitorResponse:
     if body.monitor_type == "search":
         config = {
             "monitor_type": "search",
-            "search_config": body.search_config.model_dump() if body.search_config else {},
+            "search_config": body.search_config.model_dump()
+            if body.search_config
+            else {},
             "schedule": body.schedule,
             "webhook": body.webhook,
             "created_at": now,
@@ -1680,7 +1682,9 @@ async def upload_parse_file(upload_id: str, request: Request) -> dict[str, Any]:
 
     pipe = r.pipeline()
     pipe.set(f"parse:upload:{upload_id}:data", raw_body, ex=PARSE_UPLOAD_TTL)
-    pipe.set(f"parse:upload:{upload_id}:content_type", content_type, ex=PARSE_UPLOAD_TTL)
+    pipe.set(
+        f"parse:upload:{upload_id}:content_type", content_type, ex=PARSE_UPLOAD_TTL
+    )
     pipe.set(f"parse:upload:{upload_id}:filename", filename, ex=PARSE_UPLOAD_TTL)
     pipe.set(f"parse:upload:{upload_id}", b"uploaded", ex=PARSE_UPLOAD_TTL)
     pipe.execute()

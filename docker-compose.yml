@@ -123,6 +123,8 @@ services:
       - EMBED_MODEL_NAME=${EMBED_MODEL_NAME:-BAAI/bge-m3}
       - EMBED_DIM=${EMBED_DIM:-1024}
       - ACTIVE_EMBED_MODEL=${ACTIVE_EMBED_MODEL:-v_bge-m3}
+    volumes:
+      - hf-cache:/root/.cache/huggingface
 
   qdrant:
     image: qdrant/qdrant:v1.18.2
@@ -190,3 +192,5 @@ services:
 volumes:
   valkey_data:
   qdrant_data:
+  hf-cache:
+    external: true

@@ -389,6 +389,7 @@ class TestProcessBatchScrapeAsync:
         from agent.worker import _process_batch_scrape_async
 
         mock_store = MagicMock()
+        mock_store.get_completed.return_value = 2
         mock_scraper_instance = MagicMock()
         mock_scraper_instance.scrape = AsyncMock(
             side_effect=[
@@ -438,6 +439,10 @@ class TestProcessBatchScrapeAsync:
                 scraper_url="http://scraper:8001",
             )
 
+        # Both URLs succeeded — increment_completed called twice
+        assert mock_store.increment_completed.call_count == 2
+
+        # complete_job gets the result dict from work_fn
         mock_store.complete_job.assert_called_once()
         payload = mock_store.complete_job.call_args[0][1]
         assert payload["completed"] == 2
@@ -459,6 +464,7 @@ class TestProcessBatchScrapeAsync:
         from agent.worker import _process_batch_scrape_async
 
         mock_store = MagicMock()
+        mock_store.get_completed.return_value = 1
         mock_scraper_instance = MagicMock()
         mock_scraper_instance.scrape = AsyncMock(
             side_effect=[
@@ -500,14 +506,15 @@ class TestProcessBatchScrapeAsync:
                 scraper_url="http://scraper:8001",
             )
 
-        # Exception is caught at the loop level (inside try/except),
-        # so partial results should first be completed, then
-        # the exception propagates to the outer except block.
-        # The worker code does the scrape inside try, so a failure
-        # will go to the outer except, not store partial results.
-        # Actually looking at the code: the loop is inside try,
-        # so when scrape raises, we go to the except block.
-        mock_store.fail_job.assert_called_once_with("batch-partial", "Second failed")
+        # Scrape exception is caught at the URL loop level (worker.py:400-416).
+        # Partial results are stored — complete_job is called, not fail_job.
+        mock_store.complete_job.assert_called_once()
+        payload = mock_store.complete_job.call_args[0][1]
+        assert payload["completed"] == 1
+        assert payload["total"] == 2
+        assert len(payload["pages"]) == 1
+        assert len(payload["errors"]) == 1
+        assert "Second failed" in payload["errors"][0]["error"]
         mock_scraper_instance.close.assert_called_once()
 
     @pytest.mark.asyncio
@@ -516,6 +523,7 @@ class TestProcessBatchScrapeAsync:
         from agent.worker import _process_batch_scrape_async
 
         mock_store = MagicMock()
+        mock_store.get_completed.return_value = 0
         mock_scraper_instance = MagicMock()
         mock_scraper_instance.scrape = AsyncMock(
             side_effect=Exception("Immediate fail")
@@ -548,7 +556,14 @@ class TestProcessBatchScrapeAsync:
                 scraper_url="http://scraper:8001",
             )
 
-        mock_store.fail_job.assert_called_once()
+        # Exception caught at URL loop level — complete_job with 0 pages, 1 error
+        mock_store.complete_job.assert_called_once()
+        payload = mock_store.complete_job.call_args[0][1]
+        assert payload["completed"] == 0
+        assert payload["total"] == 1
+        assert len(payload["pages"]) == 0
+        assert len(payload["errors"]) == 1
+        assert "Immediate fail" in payload["errors"][0]["error"]
         mock_scraper_instance.close.assert_called_once()
 
 

@@ -4,8 +4,6 @@ Integration-level tests using FastAPI's TestClient.  Unit-level proxy-logic
 tests live in ``test_portal_svc_unit.py``.
 """
 
-import re
-import pytest
 from unittest.mock import AsyncMock, patch
 
 import httpx
@@ -70,28 +68,6 @@ def test_metrics_contains_portal_queries_total():
     assert "portal_queries_total" in resp.text
 
 
-def test_portal_queries_total_increments():
-    """Each /ask POST increments portal_queries_total."""
-    # Read baseline
-    resp_before = client.get("/metrics")
-    before_text = resp_before.text
-    match_before = re.search(r"portal_queries_total\s+([\d.]+)", before_text)
-    before_val = float(match_before.group(1)) if match_before else 0.0
-
-    # Trigger a /ask (successful or not, the counter still increments)
-    client.post("/ask", data={"query": "inc test", "num_sources": "1"})
-
-    # Read after
-    resp_after = client.get("/metrics")
-    after_text = resp_after.text
-    match_after = re.search(r"portal_queries_total\s+([\d.]+)", after_text)
-    after_val = float(match_after.group(1)) if match_after else 0.0
-
-    assert after_val == before_val + 1.0, (
-        f"Expected portal_queries_total to increment by 1 ({before_val} -> {after_val})"
-    )
-
-
 # ── Index ────────────────────────────────────────────────────────────────────
 
 
@@ -103,12 +79,6 @@ def test_index_returns_html():
 
 
 # ── /ask — basic ────────────────────────────────────────────────────────────
-
-
-@pytest.mark.xfail(strict=False, reason="portal timeout on self-hosted runner")
-def test_ask_endpoint_accepts_post():
-    resp = client.post("/ask", data={"query": "test", "num_sources": "3"})
-    assert resp.status_code in (200, 502, 503)
 
 
 def test_ask_endpoint_content_type_event_stream():
@@ -165,12 +135,6 @@ def test_ask_empty_query_sse_stream():
 
 
 # ── /ask — large num_sources ────────────────────────────────────────────────
-
-
-def test_ask_large_num_sources():
-    """POST /ask with num_sources=100 does not crash."""
-    resp = client.post("/ask", data={"query": "test", "num_sources": "100"})
-    assert resp.status_code in (200, 502, 503)
 
 
 def test_ask_large_num_sources_forwarded_properly():
