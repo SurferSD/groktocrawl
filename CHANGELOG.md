@@ -5,6 +5,46 @@ All notable changes to GroktoCrawl are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.10.0](https://github.com/groktopus/groktocrawl/compare/v0.9.0...v0.10.0) (2026-06-27)
+
+> _The One Where the Robot Gets Organized_ — monitors, batch jobs, file uploads, and a CI that doesn't melt.
+
+### Highlights
+
+**Monitors grew up.** You can now trigger a monitor check on demand (`POST /v2/monitor/:id/run`), browse check history (`GET /v2/monitor/:id/checks`), and query individual check results. The monitor system graduated from "fire and forget" to something you can actually debug.
+
+**Batch scraping got real endpoints.** Status polling (`GET /v2/batch/scrape/:id` with pagination), cancellation, and a dedicated errors endpoint. The black box is now a glass box — you can watch a batch scrape unfold, page through results, and see exactly which URLs failed and why.
+
+**Large file parsing, two ways.** The parse endpoint now supports a two-step upload flow: `PUT /v2/parse/upload/:id` to stage a file (up to 3 hours), then reference it via `upload_id` in the parse form. Atomic Lua-scripted get-and-delete means two concurrent parse jobs won't fight over the same upload. Direct multipart upload still works for small files.
+
+**Concurrency, visible.** `GET /v2/concurrency-check` tells you how many jobs are actively processing versus the configured maximum. Useful for tuning before you hammer the API.
+
+**CI stopped lying to us.** The test suite was passing (mostly) but the CI pipeline was a mess of timeouts, OOM kills, deptry tracebacks, and portal tests that hung against a real backend. v0.10.0 ships with Docker-native health checks, a persistent HF model cache volume that doesn't re-download 6.5GB of embeddings on every build, timeouts that actually fit the workload, and a portal test suite that tests the portal (not the agent stack).
+
+### What's Next
+
+The foundation is solid. v0.11.0 targets the observability layer: richer job lifecycle telemetry, structured error classification, and a Prometheus metrics pass across all services.
+
+### Features
+
+* add batch scrape status, cancel, and errors endpoints ([#344](https://github.com/groktopus/groktocrawl/pull/344))
+* add monitor manual trigger endpoint (`POST /v2/monitor/:id/run`) ([#349](https://github.com/groktopus/groktocrawl/pull/349))
+* add monitor check history endpoints ([#346](https://github.com/groktopus/groktocrawl/pull/346))
+* add two-step parse upload endpoints for large files ([#347](https://github.com/groktopus/groktocrawl/pull/347))
+* add concurrency check endpoint (`GET /v2/concurrency-check`) ([#348](https://github.com/groktopus/groktocrawl/pull/348))
+
+### Bug Fixes
+
+* update batch scrape tests to match current error-handling behavior ([4be3909](https://github.com/groktopus/groktocrawl/commit/4be3909))
+* remove real-downstream tests from test_portal.py that hung against live agent-svc ([413207e](https://github.com/groktopus/groktocrawl/commit/413207e))
+* correct deptry `--per-rule-ignores` format to stop emitting tracebacks on every CI run ([8034bf3](https://github.com/groktopus/groktocrawl/commit/8034bf3))
+
+### CI & Infrastructure
+
+* add Docker health checks and increase integration test timeouts ([#352](https://github.com/groktopus/groktocrawl/pull/352))
+* serve embedding models from persistent Docker volume (hf-cache), removing 6.5GB model download from every build ([3d96a5d](https://github.com/groktopus/groktocrawl/commit/3d96a5d))
+
+
 ## [0.9.0](https://github.com/groktopus/groktocrawl/compare/v0.8.0...v0.9.0) (2026-06-24)
 
 
