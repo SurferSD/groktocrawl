@@ -39,7 +39,7 @@ jobs:
           for svc in agent-svc scraper-svc semantic-svc browser-svc parse-svc portal-svc; do
             echo "=== $svc ==="
             pip install -e "$svc" 2>/dev/null || true
-            deptry "$svc" --per-rule-ignores '{"DEP002":{"allowlist":["pytest","pytest-cov","pytest-xdist","httpx","vulture","deptry"]}}' || true
+            deptry "$svc" --per-rule-ignores '{"DEP002":["pytest","pytest-cov","pytest-xdist","httpx","vulture","deptry"]}' || true
           done
 
       - name: Run mypy (type checking)
