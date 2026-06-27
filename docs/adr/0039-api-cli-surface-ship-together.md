@@ -1,6 +1,6 @@
 # ADR-0039: API-CLI Surface Must Ship Together
 
-**Status:** proposed
+**Status:** accepted
 
 **Deciders:** @magnus919
 
