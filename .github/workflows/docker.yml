@@ -96,7 +96,6 @@ jobs:
           push: ${{ github.event_name == 'push' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          build-args: HF_TOKEN=${{ secrets.HF_TOKEN }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -136,6 +135,9 @@ jobs:
 
       - name: Clean up stale containers from previous run
         run: docker compose down --remove-orphans --timeout 30 || true
+
+      - name: Ensure HF model cache volume exists
+        run: docker volume inspect hf-cache || docker volume create hf-cache
 
       - name: Start the Docker stack
         run: docker compose up --build -d

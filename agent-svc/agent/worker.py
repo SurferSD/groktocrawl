@@ -380,10 +380,42 @@ async def _process_batch_scrape_async(
     scraper = ScraperClient(scraper_url)
 
     async def work_fn() -> dict[str, Any]:
-        pages = []
-        _index_batch = []
+        pages: list[dict] = []
+        errors: list[dict] = []
+        _index_batch: list[dict] = []
+        total = len(urls)
         for url in urls:
-            result = await scraper.scrape(url)
+            # Check for cancellation between URLs
+            job_meta = store.get_job(job_id)
+            if job_meta and job_meta.get("status") == "cancelled":
+                logger.info(
+                    "Batch scrape %s cancelled after %d/%d URLs",
+                    job_id,
+                    len(pages),
+                    total,
+                )
+                break
+
+            try:
+                result = await scraper.scrape(url)
+            except Exception as e:
+                errors.append(
+                    {
+                        "url": url,
+                        "error": str(e),
+                        "error_type": "scrape_error",
+                        "error_code": "SCRAPE_ERROR",
+                        "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                    }
+                )
+                store.update_job_progress(
+                    job_id,
+                    pages=list(pages),
+                    errors=list(errors),
+                    total=total,
+                )
+                continue
+
             if result.get("success"):
                 data = result["data"]
                 pages.append({"url": url, "markdown": data.get("markdown", "")})
@@ -391,7 +423,6 @@ async def _process_batch_scrape_async(
                 og = metadata.get("og") or {}
                 meta = metadata.get("meta") or {}
                 title = og.get("title") or meta.get("title") or data.get("title", "")
-                # Accumulate for batch indexing (ADR-0030) instead of per-page
                 _index_batch.append(
                     {
                         "url": url,
@@ -399,13 +430,38 @@ async def _process_batch_scrape_async(
                         "content": data.get("markdown", "")[:2000],
                     }
                 )
+                store.increment_completed(job_id)
+            else:
+                errors.append(
+                    {
+                        "url": url,
+                        "error": result.get("error", "Scrape failed"),
+                        "error_type": "scrape_error",
+                        "error_code": "SCRAPE_ERROR",
+                        "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                    }
+                )
+
+            # Update progress after each URL for real-time status polling
+            store.update_job_progress(
+                job_id,
+                pages=list(pages),
+                errors=list(errors),
+                total=total,
+            )
+
         if _index_batch:
             if task_tracker is not None:
                 task_tracker.create_background_task(_index_batch_async(_index_batch))
             else:
                 asyncio.create_task(_index_batch_async(_index_batch))
-        payload = {"completed": len(pages), "total": len(urls), "pages": pages}
-        return payload
+
+        return {
+            "completed": store.get_completed(job_id),
+            "total": total,
+            "pages": pages,
+            "errors": errors,
+        }
 
     await _run_job_with_observability(
         job_id, "batch_scrape", store, webhook_config, work_fn, scraper.close

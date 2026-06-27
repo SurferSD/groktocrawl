@@ -26,7 +26,9 @@ from .models import (
     AgentStatusResponse,
     AnswerRequest,
     AnswerResponse,
+    BatchScrapeErrorsResponse,
     BatchScrapeRequest,
+    BatchScrapeStatusResponse,
     BrowserCreateRequest,
     BrowserCreateResponse,
     BrowserDeleteResponse,
@@ -59,9 +61,12 @@ from .models import (
     MonitorListResponse,
     MonitorResponse,
     MonitorUpdateRequest,
+    MonitorCheckItem,
+    MonitorCheckListResponse,
     ParamsPreviewRequest,
     ParamsPreviewResponse,
     ParseResponse,
+    ParseUploadUrlResponse,
     ScrapeData,
     ScrapeRequest,
     ScrapeResponse,
@@ -70,7 +75,7 @@ from .models import (
     SearchResult,
     Source,
 )
-from .monitor import delete_monitor, get_all_monitors, get_monitor, save_monitor
+from .monitor import delete_monitor, get_all_monitors, get_monitor, get_monitor_check, get_monitor_checks, run_monitor, save_monitor
 from .store import JobStore
 
 logger = logging.getLogger(__name__)
@@ -830,6 +835,100 @@ async def create_batch_scrape(
     return CrawlCreateResponse(id=job_id)
 
 
+@router.get("/v2/batch/scrape/{job_id}", response_model=BatchScrapeStatusResponse)
+async def get_batch_scrape_status(
+    request: Request,
+    job_id: str,
+    offset: int = 0,
+) -> BatchScrapeStatusResponse:
+    """Get batch scrape job status and paginated results."""
+    store: JobStore = request.app.state.job_store
+    job = store.get_job(job_id)
+    if job is None:
+        raise NotFoundError(detail="Job not found", details={"job_id": job_id})
+    data = job.get("data") or {}
+    all_pages: list[dict] = data.get("pages", []) or []
+
+    created_at = job.get("created_at")
+    completed_at = job.get("completed_at")
+    duration: int | None = None
+    if created_at and completed_at:
+        try:
+            from datetime import datetime as _dt
+
+            created_dt = _dt.fromisoformat(created_at)
+            completed_dt = _dt.fromisoformat(completed_at)
+            duration = int((completed_dt - created_dt).total_seconds() * 1000)
+        except (ValueError, TypeError):
+            duration = None
+
+    completed_count = data.get("completed", 0)
+    credits_used = completed_count or len(all_pages)
+
+    # Pagination
+    _max_chunk_bytes = 10 * 1024 * 1024
+    _estimated_page_bytes = 10 * 1024
+    _max_pages_per_chunk = max(1, _max_chunk_bytes // _estimated_page_bytes)
+
+    chunk_pages = all_pages[offset:]
+    next_url: str | None = None
+
+    if len(chunk_pages) > _max_pages_per_chunk:
+        chunk_pages = all_pages[offset : offset + _max_pages_per_chunk]
+        next_offset = offset + _max_pages_per_chunk
+        if next_offset < len(all_pages):
+            scheme = request.url.scheme
+            host = request.url.netloc
+            path = request.url.path
+            next_url = f"{scheme}://{host}{path}?offset={next_offset}"
+    elif offset > 0 and not chunk_pages:
+        chunk_pages = []
+
+    return BatchScrapeStatusResponse(
+        status=job.get("status", "processing"),
+        completed=completed_count,
+        total=data.get("total", 0),
+        credits_used=credits_used,
+        data=chunk_pages or (all_pages if offset == 0 else []),
+        error=job.get("error"),
+        next=next_url,
+        created_at=created_at,
+        completed_at=completed_at,
+        expires_at=job.get("expires_at"),
+        duration=duration,
+    )
+
+
+@router.delete("/v2/batch/scrape/{job_id}", response_model=AgentCancelResponse)
+async def cancel_batch_scrape(request: Request, job_id: str) -> AgentCancelResponse:
+    """Cancel an in-progress batch scrape job."""
+    store: JobStore = request.app.state.job_store
+    if not store.cancel_job(job_id):
+        raise NotFoundError(
+            detail="Job not found or already completed", details={"job_id": job_id}
+        )
+    return AgentCancelResponse(success=True)
+
+
+@router.get(
+    "/v2/batch/scrape/{job_id}/errors", response_model=BatchScrapeErrorsResponse
+)
+async def get_batch_scrape_errors(
+    request: Request, job_id: str
+) -> BatchScrapeErrorsResponse:
+    """Get per-URL errors for a batch scrape job."""
+    store: JobStore = request.app.state.job_store
+    job = store.get_job(job_id)
+    if job is None:
+        raise NotFoundError(detail="Job not found", details={"job_id": job_id})
+    data = job.get("data") or {}
+    raw_errors: list[dict] = data.get("errors", [])
+    return BatchScrapeErrorsResponse(
+        success=True,
+        errors=[CrawlErrorItem(**e) for e in raw_errors],
+    )
+
+
 @router.post("/v1/search")
 async def search_v1(request: Request, body: SearchRequest) -> dict[str, Any]:
     """Firecrawl v1-compatible search endpoint.
@@ -1475,7 +1574,9 @@ async def create_monitor(body: MonitorCreateRequest) -> MonitorResponse:
     if body.monitor_type == "search":
         config = {
             "monitor_type": "search",
-            "search_config": body.search_config.model_dump() if body.search_config else {},
+            "search_config": body.search_config.model_dump()
+            if body.search_config
+            else {},
             "schedule": body.schedule,
             "webhook": body.webhook,
             "created_at": now,
@@ -1637,34 +1738,183 @@ async def delete_monitor_route(monitor_id: str) -> MonitorDeleteResponse:
     return MonitorDeleteResponse(success=True)
 
 
+@router.post("/v2/monitor/{monitor_id}/run", response_model=MonitorResponse)
+async def run_monitor_check(request: Request, monitor_id: str) -> MonitorResponse:
+    """Manually trigger a monitor check immediately.
+
+    Runs the check regardless of the cron schedule and returns
+    the updated monitor status including any diff or new results.
+    """
+    store: JobStore = request.app.state.job_store
+    scraper_url = request.app.state.scraper_url
+
+    try:
+        result = await run_monitor(monitor_id, scraper_url=scraper_url)
+    except ValueError:
+        raise NotFoundError(
+            detail="Monitor not found", details={"monitor_id": monitor_id}
+        )
+
+    cfg = get_monitor(monitor_id)
+    if cfg is None:
+        raise NotFoundError(
+            detail="Monitor not found", details={"monitor_id": monitor_id}
+        )
+
+    search_config = cfg.get("search_config")
+    if isinstance(search_config, str):
+        import json
+
+        search_config = json.loads(search_config)
+
+    return MonitorResponse(
+        id=monitor_id,
+        monitor_type=cfg.get("monitor_type", "scrape"),
+        url=cfg.get("url"),
+        search_config=search_config,
+        schedule=cfg.get("schedule", ""),
+        webhook=cfg.get("webhook"),
+        last_checked=cfg.get("last_checked"),
+        last_result=cfg.get("last_result"),
+        created_at=cfg.get("created_at", ""),
+    )
+
+
+@router.get(
+    "/v2/monitor/{monitor_id}/checks", response_model=MonitorCheckListResponse
+)
+async def list_monitor_checks(
+    monitor_id: str, limit: int = 50
+) -> MonitorCheckListResponse:
+    """List check history for a monitor, newest first."""
+    cfg = get_monitor(monitor_id)
+    if cfg is None:
+        raise NotFoundError(
+            detail="Monitor not found", details={"monitor_id": monitor_id}
+        )
+    checks = get_monitor_checks(monitor_id, limit=limit)
+    items = [MonitorCheckItem(**c) for c in checks]
+    return MonitorCheckListResponse(data=items, total=len(items))
+
+
+@router.get(
+    "/v2/monitor/{monitor_id}/checks/{check_index}",
+    response_model=MonitorCheckItem,
+)
+async def get_monitor_check_detail(
+    monitor_id: str, check_index: int
+) -> MonitorCheckItem:
+    """Get a specific monitor check by its 0-based index.
+
+    Index 0 is the most recent check.
+    """
+    cfg = get_monitor(monitor_id)
+    if cfg is None:
+        raise NotFoundError(
+            detail="Monitor not found", details={"monitor_id": monitor_id}
+        )
+    check = get_monitor_check(monitor_id, check_index)
+    if check is None:
+        raise NotFoundError(
+            detail="Check not found",
+            details={"monitor_id": monitor_id, "check_index": check_index},
+        )
+    return MonitorCheckItem(**check)
+
+
 # ----- Parse -----
 
 PARSE_SVC_URL = "http://parse-svc:8013"
+PARSE_UPLOAD_TTL = 3600  # 1 hour TTL for upload temp storage
+
+
+@router.post("/v2/parse/upload-url", response_model=ParseUploadUrlResponse)
+async def request_parse_upload_url(request: Request) -> ParseUploadUrlResponse:
+    """Request a pre-signed upload URL for large file parsing.
+
+    Returns an upload_id and upload_url. The client PUTs the file to the
+    upload_url, then calls POST /v2/parse with upload_id in the form.
+    """
+    import uuid
+
+    from redis import Redis
+
+    upload_id = str(uuid.uuid4())
+    r = Redis.from_url("redis://valkey:6379/0", decode_responses=False)
+    r.set(f"parse:upload:{upload_id}", b"pending", ex=PARSE_UPLOAD_TTL)
+
+    scheme = request.url.scheme
+    host = request.url.netloc
+    upload_url = f"{scheme}://{host}/v2/parse/upload/{upload_id}"
+
+    return ParseUploadUrlResponse(upload_id=upload_id, upload_url=upload_url)
+
+
+@router.put("/v2/parse/upload/{upload_id}")
+async def upload_parse_file(upload_id: str, request: Request) -> dict[str, Any]:
+    """Upload file bytes for a previously requested upload_id."""
+    from redis import Redis
+
+    r = Redis.from_url("redis://valkey:6379/0", decode_responses=False)
+    meta = r.get(f"parse:upload:{upload_id}")
+    if meta is None:
+        raise NotFoundError(
+            detail="Upload ID not found or expired",
+            details={"upload_id": upload_id},
+        )
+
+    raw_body = await request.body()
+    if not raw_body:
+        raise InvalidRequestError(detail="Empty body — no file data received")
+
+    r.set(f"parse:upload:{upload_id}:data", raw_body, ex=PARSE_UPLOAD_TTL)
+    r.set(f"parse:upload:{upload_id}", b"uploaded", ex=PARSE_UPLOAD_TTL)
+    return {"success": True, "upload_id": upload_id}
 
 
 @router.post("/v2/parse", response_model=ParseResponse)
 async def parse_file(request: Request) -> Any:
-    """Upload a file and get its content as markdown."""
+    """Upload a file and get its content as markdown.
+
+    Supports two modes:
+    - Direct: multipart form with 'file' field (small files)
+    - Two-step: form field 'upload_id' referencing a pre-uploaded file
+    """
     import httpx
+    from redis import Redis
 
     form = await request.form()
-    if "file" not in form:
-        raise InvalidRequestError(
-            detail="No file provided. Use multipart form with 'file' field."
-        )
+    r = Redis.from_url("redis://valkey:6379/0", decode_responses=False)
 
-    upload = form["file"]  # type: ignore[union-attr]
-    content = await upload.read()  # type: ignore[union-attr]
+    upload_id = form.get("upload_id")
+    if upload_id is not None:
+        # Two-step mode: retrieve pre-uploaded file
+        upload_id_str = str(upload_id)
+        content = r.get(f"parse:upload:{upload_id_str}:data")
+        if content is None:
+            raise NotFoundError(
+                detail="Upload ID not found or no data uploaded",
+                details={"upload_id": upload_id_str},
+            )
+        filename = "uploaded_file"
+        content_type = "application/octet-stream"
+        # Clean up temp keys
+        r.delete(f"parse:upload:{upload_id_str}", f"parse:upload:{upload_id_str}:data")
+    elif "file" not in form:
+        raise InvalidRequestError(
+            detail="No file provided. Use multipart form with 'file' field or 'upload_id' for two-step upload."
+        )
+    else:
+        upload = form["file"]  # type: ignore[union-attr]
+        content = await upload.read()  # type: ignore[union-attr]
+        filename = upload.filename or "file"  # type: ignore[union-attr]
+        content_type = upload.content_type or "application/octet-stream"  # type: ignore[union-attr]
 
     async with httpx.AsyncClient(timeout=120) as client:
         resp = await client.post(
             f"{PARSE_SVC_URL}/parse",
             files={
-                "file": (
-                    upload.filename or "file",  # type: ignore[union-attr]
-                    content,
-                    upload.content_type or "application/octet-stream",  # type: ignore[union-attr]
-                )
+                "file": (filename, content, content_type)
             },
         )
         try:
