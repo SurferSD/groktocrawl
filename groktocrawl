@@ -1771,9 +1771,9 @@ def cmd_batch_scrape(client: Client, args: argparse.Namespace) -> None:
     completed = result.get("completed", 0)
     total = result.get("total", 0)
     duration = result.get("duration")
-    created_at = result.get("created_at")
-    completed_at = result.get("completed_at")
-    credits = result.get("credits_used")
+    created_at = result.get("createdAt") or result.get("created_at")
+    completed_at = result.get("completedAt") or result.get("completed_at")
+    credits = result.get("creditsUsed") or result.get("credits_used")
     error = result.get("error")
     has_more = result.get("next") is not None
 
@@ -1782,7 +1782,7 @@ def cmd_batch_scrape(client: Client, args: argparse.Namespace) -> None:
     print(f"  Progress:     {completed}/{total} pages")
     if credits is not None:
         print(f"  Credits used: {credits}")
-    if duration:
+    if duration is not None:
         print(f"  Duration:     {duration}ms")
     if created_at:
         print(f"  Created:      {created_at}")
