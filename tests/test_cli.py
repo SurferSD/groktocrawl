@@ -632,3 +632,105 @@ class TestCmdBatchScrape:
         assert "Error:" in stderr
         assert "Cannot connect" in stderr
         assert "Traceback" not in stderr
+
+
+# ── cmd_monitor: run handler tests ────────────────────────────────────────────
+
+
+class TestCmdMonitorRun:
+    """Tests for the monitor run subcommand handler."""
+
+    def test_run_calls_run_monitor(self):
+        """monitor run calls client.run_monitor() with the correct ID."""
+        cmd_monitor = _cli_ns["cmd_monitor"]
+
+        mock_args = MagicMock()
+        mock_args.command_action = "run"
+        mock_args.id = "mon-abc123"
+        mock_args.dry_run = False
+
+        mock_client = MagicMock()
+        mock_client.dry_run = False
+        mock_client.run_monitor.return_value = {
+            "success": True,
+            "id": "mon-abc123",
+            "monitor_type": "scrape",
+            "url": "http://example.com",
+            "schedule": "0 */6 * * *",
+            "last_checked": "2026-06-27T12:00:00Z",
+            "last_result": "changed",
+        }
+
+        cmd_monitor(mock_client, mock_args)
+
+        mock_client.run_monitor.assert_called_once_with("mon-abc123")
+
+    def test_run_json_output(self):
+        """monitor run with JSON_OUTPUT produces valid JSON."""
+        cmd_monitor = _cli_ns["cmd_monitor"]
+
+        mock_args = MagicMock()
+        mock_args.command_action = "run"
+        mock_args.id = "mon-xyz789"
+        mock_args.dry_run = False
+
+        mock_client = MagicMock()
+        mock_client.dry_run = False
+        mock_client.run_monitor.return_value = {
+            "success": True,
+            "id": "mon-xyz789",
+            "monitor_type": "search",
+            "search_config": {"query": "latest AI news"},
+            "schedule": "0 */6 * * *",
+            "last_checked": "2026-06-27T12:00:00Z",
+            "last_result": "unchanged",
+        }
+
+        original_json = _cli_ns["JSON_OUTPUT"]
+        _cli_ns["JSON_OUTPUT"] = True
+        try:
+            stdout = _capture_stdout(cmd_monitor, mock_client, mock_args)
+        finally:
+            _cli_ns["JSON_OUTPUT"] = original_json
+
+        output = stdout.strip()
+        parsed = json.loads(output)
+        assert parsed["id"] == "mon-xyz789"
+        assert parsed["monitor_type"] == "search"
+
+    def test_run_api_error_handled(self):
+        """ApiError in monitor run exits with clean error message."""
+        cmd_monitor = _cli_ns["cmd_monitor"]
+        api_error_cls = _cli_ns["ApiError"]
+
+        mock_args = MagicMock()
+        mock_args.command_action = "run"
+        mock_args.id = "mon-err-1"
+        mock_args.dry_run = False
+
+        mock_client = MagicMock()
+        mock_client.dry_run = False
+        mock_client.run_monitor.side_effect = api_error_cls(
+            "Cannot connect to http://test-server:8080: Connection refused"
+        )
+
+        stderr = _capture_stderr(cmd_monitor, mock_client, mock_args)
+        assert "Error:" in stderr
+        assert "Cannot connect" in stderr
+        assert "Traceback" not in stderr
+
+    def test_run_dry_run(self):
+        """Dry-run monitor run emits message without calling API."""
+        cmd_monitor = _cli_ns["cmd_monitor"]
+
+        mock_args = MagicMock()
+        mock_args.command_action = "run"
+        mock_args.id = "mon-dry-1"
+        mock_args.dry_run = False
+
+        mock_client = MagicMock()
+        mock_client.dry_run = True
+
+        cmd_monitor(mock_client, mock_args)
+
+        mock_client.run_monitor.assert_not_called()

@@ -777,6 +777,9 @@ class Client:
     def delete_monitor(self, monitor_id):
         return self._request("DELETE", f"/monitor/{monitor_id}")
 
+    def run_monitor(self, monitor_id: str) -> dict[str, Any]:
+        return self._request("POST", f"/monitor/{monitor_id}/run")
+
     # ---- Parse ----
 
     def parse_file(self, filepath):
@@ -1840,6 +1843,32 @@ def cmd_monitor(client: Client, args: argparse.Namespace) -> None:
                 log(f"  URL:      {result.get('url', '')}")
             log(f"  Schedule: {args.schedule}")
 
+    elif action == "run":
+        if client.dry_run:
+            emit(
+                "[dry-run] Would trigger monitor check",
+                {
+                    "dry_run": True,
+                    "command": "monitor",
+                    "action": "run",
+                    "monitor_id": args.id,
+                },
+            )
+            return
+        try:
+            result = client.run_monitor(args.id)
+        except ApiError as e:
+            die(str(e))
+        if JSON_OUTPUT:
+            emit("", result)
+        else:
+            mt = result.get("monitor_type", "scrape")
+            print(f"Monitor {args.id} triggered")
+            print(f"  Status:      {result.get('last_result', 'pending')}")
+            print(f"  Type:        {mt}")
+            lr = result.get("last_checked", "never")
+            print(f"  Last checked:{lr}")
+
     elif action == "list":
         if client.dry_run:
             emit(
@@ -2324,6 +2353,11 @@ def make_parser() -> argparse.ArgumentParser:
 
     p_monitor_get = p_monitor_sub.add_parser("get", help="Get monitor details")
     p_monitor_get.add_argument("id", help="Monitor ID")
+
+    p_monitor_run = p_monitor_sub.add_parser(
+        "run", help="Manually trigger a monitor check"
+    )
+    p_monitor_run.add_argument("id", help="Monitor ID")
 
     p_monitor_update = p_monitor_sub.add_parser("update", help="Update a monitor")
     p_monitor_update.add_argument("id", help="Monitor ID")
