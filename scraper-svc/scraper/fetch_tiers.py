@@ -86,21 +86,80 @@ async def _playwright_fetch_with_proxy(
             # Inject cached Cloudflare clearance cookies before navigation
             await inject_cookies(url, context)
 
-            # Navigate with networkidle — same strategy as browser-svc
-            await page.goto(url, wait_until="networkidle", timeout=45000)
+            # Navigate with domcontentloaded — Cloudflare challenge pages never reach
+            # networkidle because the challenge keeps the network busy. We load the
+            # initial HTML fast, detect the challenge, then actively poll for resolution.
+            await page.goto(url, wait_until="domcontentloaded", timeout=15000)
 
             # Check for bot challenges (Cloudflare / DDoS-Guard)
             title = await page.title()
             current_url = page.url
             if _is_bot_challenge(title, current_url):
                 logger.info(
-                    "Bot challenge detected on %s, waiting for resolution...", url
+                    "Bot challenge detected on %s, polling for resolution...", url
                 )
-                await page.wait_for_timeout(8000)
+                # Active polling: check every 2s for up to 30s for the challenge to clear.
+                # The challenge resolves when either:
+                #   a) The page navigates to the real target URL (CF issues 302)
+                #   b) cf_clearance cookie appears in the browser context
+                resolved = False
+                for attempt in range(15):
+                    await page.wait_for_timeout(2000)
+                    title = await page.title()
+                    current_url = page.url
+                    if not _is_bot_challenge(title, current_url):
+                        logger.info(
+                            "Bot challenge resolved on attempt %d for %s (URL: %s)",
+                            attempt + 1,
+                            url,
+                            current_url,
+                        )
+                        resolved = True
+                        break
+                    # Also check for cf_clearance cookie as secondary signal
+                    cookies = await context.cookies()
+                    if any(c.get("name") == "cf_clearance" for c in cookies):
+                        logger.info(
+                            "Bot challenge resolved (cf_clearance cookie) on attempt %d for %s",
+                            attempt + 1,
+                            url,
+                        )
+                        resolved = True
+                        break
+                    logger.debug(
+                        "Bot challenge attempt %d/15 for %s (title=%s)",
+                        attempt + 1,
+                        url,
+                        title,
+                    )
+
+                if not resolved:
+                    logger.warning(
+                        "Bot challenge persisted after 30s for %s — skipping to FlareSolverr",
+                        url,
+                    )
+                    # Don't return challenge-page content as a valid scrape.
+                    # Return None so the pipeline falls through to Tier 3.5 (FlareSolverr).
+                    return None
+
+                # Re-read title and URL after challenge (may have navigated)
                 title = await page.title()
                 current_url = page.url
-                if _is_bot_challenge(title, current_url):
-                    logger.warning("Bot challenge persisted after wait for %s", url)
+
+            # If the challenge caused a redirect to the real site, ensure the
+            # real page's content is fully loaded before extracting.
+            if current_url != url:
+                logger.info(
+                    "Challenge redirected to %s, waiting for full page load...",
+                    current_url,
+                )
+                try:
+                    await page.wait_for_load_state("networkidle", timeout=30000)
+                except Exception:
+                    logger.debug(
+                        "networkidle timeout on redirected page %s, continuing with current content",
+                        current_url,
+                    )
 
             # Check for Substack session/channel frame redirect
             if _is_substack_redirect(current_url):

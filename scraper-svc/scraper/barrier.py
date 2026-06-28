@@ -19,6 +19,9 @@ CLOUDFLARE_INDICATORS = [
     "DDoS protection by",
     "cf-browser-verification",
     "challenge-platform",
+    "Verification successful",
+    "Enable JavaScript and cookies to continue",
+    "security verification",
 ]
 
 DDOS_GUARD_INDICATORS = [
