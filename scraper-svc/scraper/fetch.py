@@ -14,6 +14,7 @@ import os
 from urllib.parse import urlparse
 
 import httpx
+from curl_cffi import requests as curl_requests
 
 from .adapters.base import AdapterContext, get_registry
 from .cache import _check_cache, _is_binary_content_type, _set_cache
@@ -356,8 +357,8 @@ async def smart_scrape(
     else:
         logger.info("No proxy configured")
 
-    async with httpx.AsyncClient(
-        follow_redirects=True,
+    async with curl_requests.AsyncSession(
+        impersonate="chrome131",
         timeout=30,
         headers={
             "User-Agent": (

@@ -8,6 +8,7 @@ All notable changes to GroktoCrawl are documented in this file.
 
 - **CLI: `batch-scrape` subcommand.** `groktocrawl batch-scrape <job_id>` shows job status with paginated results; `--cancel` cancels an in-progress batch; `--errors` lists per-URL failures. Closes the last CLI-vs-API gap for batch scrape operations.
 - **ADR-0039 + CI check: API-CLI surface parity.** New script (`scripts/check-cli-coverage.py`) and CI workflow validate that every `/v2/` endpoint has a CLI counterpart. PR template updated with a corresponding checkbox. Prevents API endpoints from landing without CLI access.
+- **curl_cffi fetch client.** Replaces `httpx.AsyncClient` with `curl_cffi.AsyncSession(impersonate="chrome131")` in the scraper fetch tiers. Bundles `libcurl-impersonate-chrome` (BoringSSL-based TLS fingerprint), allowing Tiers 1-2 to bypass CDN-level bot detection (Akamai, Cloudflare edge) that currently blocks at TLS handshake time. See PR #363.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).

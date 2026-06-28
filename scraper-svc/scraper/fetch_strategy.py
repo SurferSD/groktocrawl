@@ -11,6 +11,7 @@ import os
 import re
 
 import httpx
+from curl_cffi import requests as curl_requests
 
 from common.url import extract_domain, is_private_host
 
@@ -49,7 +50,7 @@ async def fetch_via_llms_txt(url: str, client: httpx.AsyncClient) -> dict | None
     """Tier 1: Check for /llms.txt at the site root."""
     llms_url = f"{extract_domain(url, include_scheme=True)}/llms.txt"
     try:
-        resp = await client.get(llms_url, follow_redirects=True, timeout=10)
+        resp = await client.get(llms_url, allow_redirects=True, timeout=10)
         if (
             resp.status_code == 200
             and resp.text.strip()
@@ -81,7 +82,7 @@ async def fetch_via_content_negotiation(
         resp = await client.get(
             url,
             headers={"Accept": "text/markdown, text/plain;q=0.9, */*;q=0.8"},
-            follow_redirects=True,
+            allow_redirects=True,
             timeout=15,
         )
         if resp.status_code == 200:
@@ -723,8 +724,8 @@ async def smart_scrape(url: str) -> dict:
     else:
         logger.info("No proxy configured")
 
-    async with httpx.AsyncClient(
-        follow_redirects=True,
+    async with curl_requests.AsyncSession(
+        impersonate="chrome131",
         timeout=30,
         headers={
             "User-Agent": (
