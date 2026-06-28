@@ -50,7 +50,7 @@ async def fetch_via_llms_txt(url: str, client: httpx.AsyncClient) -> dict | None
     """Tier 1: Check for /llms.txt at the site root."""
     llms_url = f"{extract_domain(url, include_scheme=True)}/llms.txt"
     try:
-        resp = await client.get(llms_url, allow_redirects=True, timeout=10)
+        resp = await client.get(llms_url, allow_redirects=True, timeout=10)  # type: ignore[call-arg]
         if (
             resp.status_code == 200
             and resp.text.strip()
@@ -79,7 +79,7 @@ async def fetch_via_content_negotiation(
     Also checks for binary content types and short-circuits to a download payload.
     """
     try:
-        resp = await client.get(
+        resp = await client.get(  # type: ignore[call-arg]
             url,
             headers={"Accept": "text/markdown, text/plain;q=0.9, */*;q=0.8"},
             allow_redirects=True,
