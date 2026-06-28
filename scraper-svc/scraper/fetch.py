@@ -179,7 +179,7 @@ async def _head_probe(url: str, client: httpx.AsyncClient) -> dict:
         content_type: Content-Type header value
     """
     try:
-        resp = await client.head(url, follow_redirects=True, timeout=10)
+        resp = await client.head(url, allow_redirects=True, timeout=10)  # type: ignore[call-arg]
         status_code = resp.status_code
         content_type = resp.headers.get("content-type", "")
         content_length = resp.headers.get("content-length")

@@ -18,7 +18,7 @@ import httpx
 
 from curl_cffi import requests as curl_requests
 
-from common.url import extract_domain, is_private_host
+from common.url import extract_domain
 
 from .barrier import (
     _classify_barrier,
