@@ -457,6 +457,7 @@ def _download_images(
                     ),
                 },
             )
+            resp.raise_for_status()
             ct = resp.headers.get("content-type", "").split(";")[0].strip()
             if ct not in IMAGE_CONTENT_TYPES:
                 with lock:

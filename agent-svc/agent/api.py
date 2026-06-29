@@ -130,7 +130,8 @@ async def list_activity(request: Request) -> ActivityResponse:
 @router.post("/v2/scrape", response_model=ScrapeResponse)
 async def scrape(request: Request, body: ScrapeRequest) -> ScrapeResponse:
     scraper = request.app.state.scraper_client
-    result = await scraper.scrape(body.url)
+    scrape_opts = {"formats": body.formats}
+    result = await scraper.scrape(body.url, scrape_options=scrape_opts)
     if result.get("success"):
         scraper_data = result["data"]
         # Fire-and-forget index the page
