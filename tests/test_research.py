@@ -64,8 +64,8 @@ def mock_scraper():
     m = MagicMock()
     m.scrape = AsyncMock()
 
-    async def _fb(url, generic_timeout=20.0, browser_timeout=45.0):
-        return await m.scrape(url, force_browser=False)
+    async def _fb(url, generic_timeout=20.0, browser_timeout=45.0, scrape_options=None):
+        return await m.scrape(url, force_browser=False, scrape_options=scrape_options)
 
     m.scrape_with_fallback = _fb
     return m
