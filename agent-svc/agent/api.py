@@ -1033,12 +1033,12 @@ async def search(request: Request, body: SearchRequest) -> SearchResponse:
                 )
 
         if image_only:
-            data: dict[str, list] = {
+            image_data_result: dict[str, list] = {
                 "web": [],
                 "images": [r.model_dump() for r in image_results],
                 "news": [],
             }
-            return SearchResponse(data=data)
+            return SearchResponse(data=image_data_result)
 
         # ── Non-image sources: standard SearXNG path ──────────────
         # Determine effective sources/categories for the main query
@@ -1061,9 +1061,9 @@ async def search(request: Request, body: SearchRequest) -> SearchResponse:
                 llm_model=request.app.state.llm_model,
             )
             search_results = deep_result["results"]
-            data: dict[str, list] = {"web": search_results, "images": [], "news": []}
+            deep_data: dict[str, list] = {"web": search_results, "images": [], "news": []}
             return SearchResponse(
-                data=data, query_variations=deep_result.get("query_variations", [])
+                data=deep_data, query_variations=deep_result.get("query_variations", [])
             )
 
         # Vector-only mode: query Qdrant, no SearXNG
@@ -1207,17 +1207,17 @@ async def search(request: Request, body: SearchRequest) -> SearchResponse:
                 await scraper.close()
 
         # Route results to the correct top-level key based on sources filter
-        data: dict[str, list] = {"web": [], "images": [], "news": []}
+        result_data: dict[str, list] = {"web": [], "images": [], "news": []}
         if effective_sources:
             for src in effective_sources:
-                if src in data:
-                    data[src] = [r.model_dump() for r in search_results]
+                if src in result_data:
+                    result_data[src] = [r.model_dump() for r in search_results]
         else:
-            data["web"] = [r.model_dump() for r in search_results]
+            result_data["web"] = [r.model_dump() for r in search_results]
 
         # Merge image results if sources included "images"
         if image_results:
-            data["images"] = [r.model_dump() for r in image_results]
+            result_data["images"] = [r.model_dump() for r in image_results]
 
         # Rich mode: scrape results and synthesize enriched content
         output = None
@@ -1287,7 +1287,7 @@ async def search(request: Request, body: SearchRequest) -> SearchResponse:
                 await llm_client.close()
                 await scraper_client.close()
 
-        return SearchResponse(data=data, output=output)
+        return SearchResponse(data=result_data, output=output)
     finally:
         await searxng.close()
 

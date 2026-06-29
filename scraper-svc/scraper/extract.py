@@ -554,7 +554,7 @@ def extract_images(
     position = 0
 
     for img in soup.find_all("img"):
-        src = (img.get("src") or "").strip()
+        src = str(img.get("src") or "").strip()
         if not src:
             continue
 
@@ -571,19 +571,19 @@ def extract_images(
             raw = img.get(attr_name)
             if raw is not None:
                 with contextlib.suppress(ValueError, TypeError):
-                    width = int(raw)
+                    width = int(str(raw))
 
         for attr_name in ("height",):
             raw = img.get(attr_name)
             if raw is not None:
                 with contextlib.suppress(ValueError, TypeError):
-                    height = int(raw)
+                    height = int(str(raw))
 
         position += 1
         images.append(
             {
                 "url": src,
-                "alt": (img.get("alt") or "").strip(),
+                "alt": str(img.get("alt") or "").strip(),
                 "width": width,
                 "height": height,
                 "position": position,
