@@ -56,9 +56,9 @@ async def _probe_browser() -> bool:
 
 
 class VerbosityLevel(str, Enum):
-    compact = "compact"       # ~300 chars of body text
-    standard = "standard"     # Current behavior (readability extraction)
-    full = "full"             # Complete page text including structural markup
+    compact = "compact"  # ~300 chars of body text
+    standard = "standard"  # Current behavior (readability extraction)
+    full = "full"  # Complete page text including structural markup
 
 
 class SectionCategory(str, Enum):
@@ -72,15 +72,19 @@ class SectionCategory(str, Enum):
 
 
 class ExtrasOptions(BaseModel):
-    links: int | None = None        # Max external links to extract
-    imageLinks: int | None = None   # Max image URLs to extract
-    codeBlocks: int | None = None   # Max code blocks to extract
+    links: int | None = None  # Max external links to extract
+    imageLinks: int | None = None  # Max image URLs to extract
+    codeBlocks: int | None = None  # Max code blocks to extract
 
 
 class ContentsOptions(BaseModel):
-    text: bool | dict | None = None          # True = full text, or dict with verbosity/sections
-    highlights: bool | dict | None = None    # True = auto highlights, or dict with query/maxCharacters
-    summary: bool | dict | None = None       # True = auto summary, or dict with query/maxTokens
+    text: bool | dict | None = None  # True = full text, or dict with verbosity/sections
+    highlights: bool | dict | None = (
+        None  # True = auto highlights, or dict with query/maxCharacters
+    )
+    summary: bool | dict | None = (
+        None  # True = auto summary, or dict with query/maxTokens
+    )
     extras: ExtrasOptions | None = None
 
 
@@ -304,6 +308,7 @@ async def scrape(request: ScrapeRequest):
                     else:
                         # Fallback: strip HTML tags with regex
                         import re
+
                         markdown = re.sub(r"<[^>]+>", "", raw_html).strip()
                 elif include_sections or exclude_sections:
                     if raw_html:
@@ -333,6 +338,20 @@ async def scrape(request: ScrapeRequest):
             data["extras"] = extras_data
         if result.get("download"):
             data["download"] = result["download"]
+
+        # ── Image extraction (when requested via scrape_options.formats) ──
+        scrape_opts = request.scrape_options or {}
+        formats = scrape_opts.get("formats", [])
+        if "images" in formats and raw_html:
+            from .extract import extract_images
+
+            remove_base64 = scrape_opts.get("remove_base64_images", False)
+            images = extract_images(
+                raw_html,
+                base_url=request.url,
+                remove_base64_images=remove_base64,
+            )
+            data["images"] = images
         METRICS.counter("scrape_calls_total", "Total scrape requests", ["status"]).inc(
             {"status": "success"}
         )

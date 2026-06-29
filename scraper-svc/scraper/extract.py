@@ -422,6 +422,7 @@ def filter_sections(
 
 # ── Extras extraction ──────────────────────────────────────────
 
+
 def extract_extras(html: str, options) -> dict:
     """Extract links, images, and code blocks from raw HTML.
 
@@ -510,3 +511,83 @@ def extract_extras(html: str, options) -> dict:
         result["codeBlocks"] = blocks
 
     return result
+
+
+# ── Image extraction ───────────────────────────────────────────
+
+
+def extract_images(
+    html: str,
+    base_url: str = "",
+    remove_base64_images: bool = False,
+) -> list[dict]:
+    """Extract structured image metadata from raw HTML.
+
+    Parses ``<img>`` tags from the DOM, capturing ``src``, ``alt``,
+    ``width``, ``height``, and their document-order position.
+    Relative URLs are resolved against ``base_url`` when provided.
+    When ``remove_base64_images`` is True, data URIs are excluded
+    from the output.
+
+    Args:
+        html: Raw HTML string from the page.
+        base_url: Page URL used to resolve relative image sources.
+        remove_base64_images: When True, skip ``data:image/...`` URIs.
+
+    Returns:
+        List of dicts with keys: ``url``, ``alt``, ``width``,
+        ``height``, ``position``.
+    """
+    try:
+        from urllib.parse import urljoin
+
+        from bs4 import BeautifulSoup
+    except ImportError:
+        logger.warning("BeautifulSoup not available for image extraction")
+        return []
+
+    if not html or not html.strip():
+        return []
+
+    soup = BeautifulSoup(html, "html.parser")
+    images: list[dict] = []
+    position = 0
+
+    for img in soup.find_all("img"):
+        src = (img.get("src") or "").strip()
+        if not src:
+            continue
+
+        if remove_base64_images and src.startswith("data:"):
+            continue
+
+        if base_url and not src.startswith(("http:", "https:", "data:")):
+            with contextlib.suppress(Exception):
+                src = urljoin(base_url, src)
+
+        width = None
+        height = None
+        for attr_name in ("width",):
+            raw = img.get(attr_name)
+            if raw is not None:
+                with contextlib.suppress(ValueError, TypeError):
+                    width = int(raw)
+
+        for attr_name in ("height",):
+            raw = img.get(attr_name)
+            if raw is not None:
+                with contextlib.suppress(ValueError, TypeError):
+                    height = int(raw)
+
+        position += 1
+        images.append(
+            {
+                "url": src,
+                "alt": (img.get("alt") or "").strip(),
+                "width": width,
+                "height": height,
+                "position": position,
+            }
+        )
+
+    return images

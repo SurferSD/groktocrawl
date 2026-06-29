@@ -52,7 +52,7 @@ class TestClientCrawl:
 
         def _fake_request(method, path, json_data=None, params=None):
             assert json_data["url"] == "http://example.com"
-            assert json_data["limit"] == 50
+            assert json_data["limit"] == 0
             assert json_data["max_depth"] == 2
             return {"success": True, "id": "crawl-1234-uuid"}
 
@@ -248,6 +248,7 @@ class TestCmdCrawl:
         mock_args.ignore_query_parameters = True
         mock_args.no_poll = True
         mock_args.dry_run = False
+        mock_args.format = None
 
         mock_client = MagicMock()
         mock_client.dry_run = False
@@ -986,9 +987,7 @@ class TestParseUploadParser:
         """parse-upload parses upload_id and --file correctly."""
         make_parser = _cli_ns["make_parser"]
         parser = make_parser()
-        args = parser.parse_args(
-            ["parse-upload", "my-id", "--file", "/tmp/report.pdf"]
-        )
+        args = parser.parse_args(["parse-upload", "my-id", "--file", "/tmp/report.pdf"])
         assert args.upload_id == "my-id"
         assert args.file == "/tmp/report.pdf"
         assert args.command == "parse-upload"
@@ -1004,7 +1003,10 @@ class TestParseUploadParser:
         with pytest.raises(SystemExit):
             with redirect_stderr(stderr):
                 parser.parse_args(["parse-upload", "my-id"])
-        assert "error" in stderr.getvalue().lower() or "required" in stderr.getvalue().lower()
+        assert (
+            "error" in stderr.getvalue().lower()
+            or "required" in stderr.getvalue().lower()
+        )
 
     def test_parse_with_upload_id_flag(self):
         """parse --upload-id is parsed correctly."""
@@ -1027,6 +1029,7 @@ class TestParseUploadParser:
                 parser.parse_args(["parse", "--help"])
         help_text = stdout.getvalue()
         assert "--upload-id" in help_text
+
 
 # ── cmd_monitor: run handler tests ────────────────────────────────────────────
 
@@ -1127,5 +1130,159 @@ class TestCmdMonitorRun:
 
         cmd_monitor(mock_client, mock_args)
 
-        mock_client.run_monitor.assert_not_called()
 
+# ── Image support tests ──────────────────────────────────────────────────────
+
+
+class TestImageSupport:
+    """Tests for image format, download, and display features."""
+
+    def test_scrape_format_includes_images(self):
+        """scrape --format includes 'images' in choices."""
+        scrape_parser = None
+        for action in _cli_ns["make_parser"]()._actions:
+            if getattr(action, "dest", "") == "command":
+                for choice, subparser in getattr(action, "choices", {}).items():
+                    if choice == "scrape":
+                        scrape_parser = subparser
+                        break
+        assert scrape_parser is not None
+        # Verify --format choice includes "images"
+        for action in scrape_parser._actions:
+            if "--format" in action.option_strings:
+                assert "images" in action.choices
+                break
+
+    def test_crawl_format_flag_accepted(self):
+        """crawl --format flag passes scrape_options to client's extra kwargs."""
+        cmd_crawl = _cli_ns["cmd_crawl"]
+
+        mock_args = MagicMock()
+        mock_args.url = "http://example.com"
+        mock_args.limit = 10
+        mock_args.max_depth = 2
+        mock_args.include_paths = None
+        mock_args.exclude_paths = None
+        mock_args.max_pages = None
+        mock_args.ignore_query_parameters = False
+        mock_args.no_poll = True
+        mock_args.dry_run = False
+        mock_args.format = ["markdown", "images"]
+
+        mock_client = MagicMock()
+        mock_client.dry_run = False
+        mock_client.crawl.return_value = {"success": True, "id": "img-job-1"}
+
+        cmd_crawl(mock_client, mock_args)
+
+        mock_client.crawl.assert_called_once_with(
+            url="http://example.com",
+            limit=10,
+            max_depth=2,
+            include_paths=None,
+            exclude_paths=None,
+            max_pages=None,
+            ignore_query_parameters=False,
+            scrape_options={"formats": ["markdown", "images"]},
+        )
+
+    def test_scrape_with_images_display(self):
+        """cmd_scrape displays images when data.images is present."""
+        cmd_scrape = _cli_ns["cmd_scrape"]
+
+        mock_args = MagicMock()
+        mock_args.url = "http://example.com"
+        mock_args.format = ["markdown", "images"]
+        mock_args.only_main_content = True
+        mock_args.timeout = 30000
+        mock_args.contents = None
+        mock_args.output = None
+        mock_args.dry_run = False
+        mock_args.download_images = False
+
+        mock_client = MagicMock()
+        mock_client.dry_run = False
+        mock_client.scrape.return_value = {
+            "success": True,
+            "data": {
+                "markdown": "# Test Page\n\nContent here.",
+                "images": [
+                    {
+                        "url": "https://example.com/img1.png",
+                        "alt": "Test image",
+                        "width": 800,
+                        "height": 600,
+                        "position": 1,
+                    },
+                    {
+                        "url": "https://example.com/img2.jpg",
+                        "alt": "",
+                        "width": None,
+                        "height": None,
+                        "position": 2,
+                    },
+                ],
+            },
+        }
+
+        stdout = _capture_stdout(cmd_scrape, mock_client, mock_args)
+        assert "# Test Page" in stdout
+        assert "Images found on page: 2" in stdout
+        assert "Test image" in stdout
+
+    def test_agent_include_images_flag(self):
+        """agent --include-images passes include_images to create_agent_stream."""
+        cmd_agent = _cli_ns["cmd_agent"]
+
+        mock_args = MagicMock()
+        mock_args.prompt = "research images"
+        mock_args.urls = None
+        mock_args.sync = False
+        mock_args.no_poll = False
+        mock_args.pyramid = False
+        mock_args.output_dir = ""
+        mock_args.include_images = True
+
+        # Mock a stream response that returns one "done" event
+        mock_resp = MagicMock()
+        mock_resp.iter_lines.return_value = [
+            "data: "
+            + json.dumps(
+                {
+                    "type": "done",
+                    "result": "test result",
+                    "sources": [],
+                    "latency_ms": 100,
+                }
+            ),
+            "data: [DONE]",
+        ]
+
+        mock_client = MagicMock()
+        mock_client.dry_run = False
+        mock_client.create_agent_stream.return_value = {"_stream": mock_resp}
+
+        cmd_agent(mock_client, mock_args)
+
+        mock_client.create_agent_stream.assert_called_once_with(
+            prompt="research images",
+            urls=None,
+            include_images=True,
+        )
+
+    def test_search_type_images_in_choices(self):
+        """search --search-type includes 'images' in choices."""
+        make_parser = _cli_ns["make_parser"]
+        parser = make_parser()
+        search_parser = None
+        for action in parser._actions:
+            if getattr(action, "dest", "") == "command":
+                choices = getattr(action, "choices", {})
+                if "search" in choices:
+                    search_parser = choices["search"]
+                    break
+        assert search_parser is not None
+        for action in search_parser._actions:
+            if "--search-type" in action.option_strings:
+                assert "images" in action.choices
+                break

@@ -9,7 +9,15 @@ from pydantic.alias_generators import to_camel
 
 # ── Valid scrape format values ──────────────────────────────────
 VALID_SCRAPE_FORMATS: frozenset[str] = frozenset(
-    {"markdown", "html", "links", "screenshot", "rawHtml", "screenshot@fullPage"}
+    {
+        "markdown",
+        "html",
+        "links",
+        "screenshot",
+        "rawHtml",
+        "screenshot@fullPage",
+        "images",
+    }
 )
 
 # ── Valid browser action types ──────────────────────────────────
@@ -404,11 +412,22 @@ class DownloadData(BaseModel):
     data_url: str | None = None
 
 
+class ImageData(BaseModel):
+    """Structured image metadata matching the Firecrawl v2 contract."""
+
+    url: str
+    alt: str = ""
+    width: int | None = None
+    height: int | None = None
+    position: int = 0
+
+
 class ScrapeData(BaseModel):
     markdown: str = ""
     metadata: dict[str, Any] = Field(default_factory=dict)
     download: DownloadData | None = None
     quality: dict[str, Any] | None = None
+    images: list[ImageData] | None = None
 
 
 class ScrapeResponse(BaseModel):
@@ -432,6 +451,9 @@ class AgentRequest(BaseModel):
     webhook: dict[str, Any] | None = None
     strict_constrain_to_urls: bool = False
     stream: bool = Field(default=False, description="SSE streaming response")
+    include_images: bool = Field(
+        default=False, description="Collect images from scraped sources"
+    )
 
     model_config = ConfigDict(populate_by_name=True)
 
@@ -753,6 +775,20 @@ class SearchResult(BaseModel):
     summary: str | None = None  # LLM-generated summary
     extras: dict | None = None  # Links, images, code blocks from scraper
     markdown: str | None = None  # Full scraped markdown when contents requested
+
+
+class ImageSearchResult(BaseModel):
+    """Firecrawl v2 image search result shape.
+
+    Maps to the ``data.images[]`` slot in SearchResponse.
+    """
+
+    title: str = ""
+    image_url: str = ""
+    image_width: int | None = None
+    image_height: int | None = None
+    url: str = ""
+    position: int = 0
 
 
 class SearchResponse(BaseModel):

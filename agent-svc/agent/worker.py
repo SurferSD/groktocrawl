@@ -78,6 +78,7 @@ async def _process_agent_async(
     scraper_url: str,
     webhook_config: dict[str, Any] | None = None,
     requested_model: str | None = None,
+    include_images: bool = False,
 ) -> None:
     settings = _get_worker_settings()
     store = JobStore(
@@ -95,6 +96,7 @@ async def _process_agent_async(
             llm_api_key=llm_api_key,
             llm_model=llm_model,
             requested_model=requested_model,
+            include_images=include_images,
         )
 
     await _run_job_with_observability(job_id, "agent", store, webhook_config, work_fn)

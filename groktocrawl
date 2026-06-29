@@ -371,6 +371,121 @@ def _write_file(path: str, content: str) -> None:
         f.write(content)
 
 
+def _download_images(
+    images: list[dict],
+    output_dir: str = "_images",
+    max_concurrent: int = 5,
+) -> dict[str, int]:
+    """Download images from URLs to a local directory.
+
+    Skips non-image responses (404s, non-image content types) and
+    already-downloaded files (by filename).
+
+    Args:
+        images: List of image dicts with at minimum a ``url`` key.
+        output_dir: Directory to save images into.
+        max_concurrent: Maximum concurrent downloads.
+
+    Returns:
+        Dict with ``downloaded``, ``skipped``, ``total`` counts.
+    """
+    import concurrent.futures
+    import hashlib
+    import threading
+
+    os.makedirs(output_dir, exist_ok=True)
+
+    IMAGE_CONTENT_TYPES = {
+        "image/jpeg",
+        "image/png",
+        "image/gif",
+        "image/webp",
+        "image/svg+xml",
+        "image/bmp",
+        "image/tiff",
+    }
+
+    def _filename(url: str) -> str:
+        """Derive a safe filename from the URL."""
+        from urllib.parse import urlparse
+
+        parsed = urlparse(url)
+        basename = parsed.path.rsplit("/", 1)[-1] if parsed.path else "image"
+        if "." not in basename[-6:]:
+            basename += ".jpg"
+        # Ensure uniqueness via short hash of URL
+        url_hash = hashlib.md5(url.encode()).hexdigest()[:8]
+        name, _, ext = basename.rpartition(".")
+        return f"{name}_{url_hash}.{ext}"
+
+    downloaded = 0
+    skipped = 0
+    skip_reasons: dict[str, int] = {}
+    lock = threading.Lock()
+
+    def _download_one(img: dict) -> None:
+        nonlocal downloaded, skipped
+        url = img.get("url", "")
+        if not url:
+            with lock:
+                skipped += 1
+                skip_reasons["no_url"] = skip_reasons.get("no_url", 0) + 1
+            return
+
+        fname = _filename(url)
+        filepath = os.path.join(output_dir, fname)
+        if os.path.exists(filepath):
+            with lock:
+                skipped += 1
+                skip_reasons["already_cached"] = (
+                    skip_reasons.get("already_cached", 0) + 1
+                )
+            return
+
+        try:
+            import requests as _requests
+
+            resp = _requests.get(
+                url,
+                stream=True,
+                timeout=30,
+                headers={
+                    "User-Agent": (
+                        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                        "AppleWebKit/537.36 (KHTML, like Gecko) "
+                        "Chrome/131.0.0.0 Safari/537.36"
+                    ),
+                },
+            )
+            ct = resp.headers.get("content-type", "").split(";")[0].strip()
+            if ct not in IMAGE_CONTENT_TYPES:
+                with lock:
+                    skipped += 1
+                    skip_reasons["non_image_content_type"] = (
+                        skip_reasons.get("non_image_content_type", 0) + 1
+                    )
+                return
+            with open(filepath, "wb") as f:
+                f.write(resp.content)
+            with lock:
+                downloaded += 1
+        except Exception:
+            with lock:
+                skipped += 1
+                skip_reasons["download_error"] = (
+                    skip_reasons.get("download_error", 0) + 1
+                )
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=max_concurrent) as executor:
+        list(executor.map(_download_one, images))
+
+    return {
+        "downloaded": downloaded,
+        "skipped": skipped,
+        "total": len(images),
+    }
+
+
 def log(msg: str) -> None:
     if not QUIET and not JSON_OUTPUT:
         print(msg)
@@ -626,18 +741,22 @@ class Client:
         prompt: str,
         urls: list[str] | None = None,
         schema: dict | None = None,
+        include_images: bool = False,
     ) -> dict[str, Any]:
         data: dict[str, Any] = {"prompt": prompt}
         if urls:
             data["urls"] = urls
         if schema:
             data["schema"] = schema
+        if include_images:
+            data["include_images"] = True
         return self._request("POST", "/agent", json_data=data)
 
     def create_agent_stream(
         self,
         prompt: str,
         urls: list[str] | None = None,
+        include_images: bool = False,
     ) -> dict[str, Any]:
         """Create an agent research job with SSE streaming.
 
@@ -646,6 +765,8 @@ class Client:
         data: dict[str, Any] = {"prompt": prompt, "stream": True}
         if urls:
             data["urls"] = urls
+        if include_images:
+            data["include_images"] = True
         import requests
 
         url = self._url("/agent")
@@ -803,8 +924,9 @@ class Client:
 
     def parse_upload_file(self, upload_id: str, filepath: str) -> dict[str, Any]:
         """Upload a file for two-step parsing via PUT /v2/parse/upload/{upload_id}."""
-        import requests
         import mimetypes
+
+        import requests
 
         url = self._url(f"/parse/upload/{upload_id}")
         if self.dry_run:
@@ -912,12 +1034,31 @@ def cmd_scrape(client: Client, args: argparse.Namespace) -> None:
     markdown = data.get("markdown", "")
     text = data.get("text", "")
     content = markdown or text or "(no content)"
+    images = data.get("images", [])
 
     if args.output:
         with open(args.output, "w") as f:
             f.write(content)
     else:
         print(content.rstrip())
+
+    if images:
+        print(f"\nImages found on page: {len(images)}")
+        for img in images:
+            url = img.get("url", "")
+            alt = img.get("alt", "")
+            w = img.get("width")
+            h = img.get("height")
+            dims = f" ({w}x{h})" if w and h else ""
+            label = alt or url.rsplit("/", 1)[-1] if url else "?"
+            print(f"  - {label}{dims}")
+
+    if args.download_images and images:
+        result = _download_images(images)
+        log(
+            f"Downloaded {result['downloaded']}/{result['total']} images"
+            f" ({result['skipped']} skipped) to _images/"
+        )
 
 
 def cmd_search(client: Client, args: argparse.Namespace) -> None:
@@ -953,13 +1094,20 @@ def cmd_search(client: Client, args: argparse.Namespace) -> None:
             except (json.JSONDecodeError, FileNotFoundError) as e:
                 die(f"Invalid contents: {e}")
 
+        # Map --search-type images to sources=["images"]
+        search_type = args.search_type
+        sources = args.sources
+        if args.search_type == "images":
+            sources = ["images"]
+            search_type = "fast"
+
         if args.stream:
             result = client.search_stream(
                 query=args.query,
                 limit=args.limit,
                 categories=args.categories,
-                sources=args.sources,
-                search_type=args.search_type,
+                sources=sources,
+                search_type=search_type,
                 retrieval_mode=args.retrieval_mode,
                 output_schema=output_schema,
                 system_prompt=args.system_prompt,
@@ -998,8 +1146,8 @@ def cmd_search(client: Client, args: argparse.Namespace) -> None:
             limit=args.limit,
             scrape=args.scrape_results,
             categories=args.categories,
-            sources=args.sources,
-            search_type=args.search_type,
+            sources=sources,
+            search_type=search_type,
             output_schema=output_schema,
             system_prompt=args.system_prompt,
             contents=contents,
@@ -1008,30 +1156,66 @@ def cmd_search(client: Client, args: argparse.Namespace) -> None:
         die(str(e))
 
     data = result.get("data", {}).get("web", [])
+    image_data = result.get("data", {}).get("images", [])
 
     # Show structured output if present
     if JSON_OUTPUT:
         output_data = {"results": data, "query": args.query}
+        if image_data:
+            output_data["images"] = image_data
         if result.get("output"):
             output_data["output"] = result["output"]
         emit("", output_data)
         return
 
-    if not data:
+    if not data and not image_data:
         log(f"No results for '{args.query}'")
         return
 
-    print(f"Search results for: {args.query}\n")
-    for i, item in enumerate(data[: args.limit], 1):
-        if isinstance(item, dict):
+    if image_data and not data:
+        # Image-only results
+        print(f"Image search results for: {args.query}\n")
+        for i, item in enumerate(image_data[: args.limit], 1):
             title = item.get("title", "(no title)")
-            url = item.get("url", "")
-            desc = item.get("description", "")
-            print(f"{i}. {title}")
-            if url:
-                print(f"   {url}")
-            if desc:
-                print(f"   {desc[:150]}")
+            img_url = item.get("image_url", item.get("imageUrl", ""))
+            source_url = item.get("url", "")
+            w = item.get("image_width") or item.get("imageWidth")
+            h = item.get("image_height") or item.get("imageHeight")
+            dims = f" ({w}x{h})" if w and h else ""
+            print(f"{i}. {title}{dims}")
+            print(f"   {img_url}")
+            if source_url and source_url != img_url:
+                print(f"   Source: {source_url}")
+            print()
+        return
+
+    if data:
+        print(f"Search results for: {args.query}\n")
+        for i, item in enumerate(data[: args.limit], 1):
+            if isinstance(item, dict):
+                title = item.get("title", "(no title)")
+                url = item.get("url", "")
+                desc = item.get("description", "")
+                print(f"{i}. {title}")
+                if url:
+                    print(f"   {url}")
+                if desc:
+                    print(f"   {desc[:150]}")
+                print()
+
+    if image_data:
+        print(f"\n--- Images ({len(image_data)}) ---")
+        for i, item in enumerate(image_data[:10], 1):
+            title = item.get("title", "(no title)")
+            img_url = item.get("image_url", item.get("imageUrl", ""))
+            source_url = item.get("url", "")
+            w = item.get("image_width") or item.get("imageWidth")
+            h = item.get("image_height") or item.get("imageHeight")
+            dims = f" ({w}x{h})" if w and h else ""
+            print(f"{i}. {title}{dims}")
+            print(f"   {img_url}")
+            if source_url and source_url != img_url:
+                print(f"   Source: {source_url}")
             print()
 
 
@@ -1078,6 +1262,10 @@ def cmd_crawl(client: Client, args: argparse.Namespace) -> None:
         return
 
     try:
+        extra: dict[str, Any] = {}
+        crawl_format = getattr(args, "format", None)
+        if isinstance(crawl_format, list) and crawl_format:
+            extra["scrape_options"] = {"formats": crawl_format}
         result = client.crawl(
             url=args.url,
             limit=args.limit,
@@ -1086,6 +1274,7 @@ def cmd_crawl(client: Client, args: argparse.Namespace) -> None:
             exclude_paths=args.exclude_paths,
             max_pages=args.max_pages,
             ignore_query_parameters=args.ignore_query_parameters,
+            **extra,
         )
     except ApiError as e:
         die(str(e))
@@ -1128,6 +1317,20 @@ def cmd_crawl(client: Client, args: argparse.Namespace) -> None:
                 for page in pages:
                     u = page.get("url", page.get("metadata", {}).get("sourceURL", "?"))
                     print(f"  {u}")
+
+            # Download images from all pages if --download-images flag is set
+            if args.download_images:
+                all_images: list[dict] = []
+                for page in pages:
+                    page_images = page.get("images", [])
+                    if page_images:
+                        all_images.extend(page_images)
+                if all_images:
+                    result = _download_images(all_images)
+                    log(
+                        f"\nDownloaded {result['downloaded']}/{result['total']} images"
+                        f" ({result['skipped']} skipped) to _images/"
+                    )
             return
         elif s in ("failed", "error"):
             die(f"Crawl failed: {status.get('error', 'unknown')}")
@@ -1152,14 +1355,22 @@ def cmd_agent(client: Client, args: argparse.Namespace) -> None:
         log(f"Agent researching... (pyramid output to {output_dir})")
 
     try:
+        include_images = getattr(args, "include_images", False)
         if args.sync:
             # Non-streaming path: create job and poll
             result = client.create_agent(
-                prompt=args.prompt, urls=args.urls, schema=None
+                prompt=args.prompt,
+                urls=args.urls,
+                schema=None,
+                include_images=include_images,
             )
         else:
             # Streaming path (default)
-            result = client.create_agent_stream(prompt=args.prompt, urls=args.urls)
+            result = client.create_agent_stream(
+                prompt=args.prompt,
+                urls=args.urls,
+                include_images=include_images,
+            )
     except ApiError as e:
         print(f"\nError: {e}", flush=True)
         sys.exit(1)
@@ -2239,7 +2450,7 @@ def make_parser() -> argparse.ArgumentParser:
         "-f",
         nargs="+",
         default=["markdown"],
-        choices=["markdown", "html", "rawHtml", "links", "screenshot", "json", "text"],
+        choices=["markdown", "html", "rawHtml", "links", "screenshot", "images"],
         help="Output formats (default: markdown)",
     )
     p_scrape.add_argument(
@@ -2264,6 +2475,11 @@ def make_parser() -> argparse.ArgumentParser:
     )
     p_scrape.add_argument(
         "-o", "--output", help="Write output to file instead of stdout"
+    )
+    p_scrape.add_argument(
+        "--download-images",
+        action="store_true",
+        help="Download images from the page to _images/ directory",
     )
 
     p_search = subparsers.add_parser("search", help="Search the web")
@@ -2290,7 +2506,7 @@ def make_parser() -> argparse.ArgumentParser:
     p_search.add_argument(
         "--search-type",
         default="fast",
-        choices=["fast", "rich", "deep"],
+        choices=["fast", "rich", "deep", "images"],
         help="Search mode: fast (default, <1s), rich (scraped excerpts + synthesis, 1-3s), or deep (multi-pass with gap analysis)",
     )
     p_search.add_argument(
@@ -2352,6 +2568,18 @@ def make_parser() -> argparse.ArgumentParser:
     p_crawl.add_argument(
         "--no-poll", action="store_true", help="Don't poll for completion"
     )
+    p_crawl.add_argument(
+        "--format",
+        "-f",
+        nargs="+",
+        choices=["markdown", "html", "rawHtml", "links", "screenshot", "images"],
+        help="Output formats for each page (default: markdown)",
+    )
+    p_crawl.add_argument(
+        "--download-images",
+        action="store_true",
+        help="Download images from crawled pages to _images/ directory",
+    )
 
     p_agent = subparsers.add_parser("agent", help="Start an autonomous research agent")
     p_agent.add_argument("prompt", help="Research prompt/question")
@@ -2369,6 +2597,11 @@ def make_parser() -> argparse.ArgumentParser:
     )
     p_agent.add_argument(
         "-o", "--output-dir", help="Output directory for pyramid (implies --pyramid)"
+    )
+    p_agent.add_argument(
+        "--include-images",
+        action="store_true",
+        help="Include images in research (collects images from scraped sources)",
     )
 
     p_download = subparsers.add_parser(
@@ -2493,21 +2726,19 @@ def make_parser() -> argparse.ArgumentParser:
         "parse",
         help="Parse a document file (PDF, EPUB, DOCX, etc.) to markdown via the server",
     )
-    p_parse.add_argument(
-        "filepath", nargs="?", help="Path to the file to parse"
-    )
+    p_parse.add_argument("filepath", nargs="?", help="Path to the file to parse")
     p_parse.add_argument(
         "-o", "--output", help="Write output to file instead of stdout"
     )
-    p_parse.add_argument(
-        "--upload-id", help="Parse a pre-uploaded file by upload ID"
-    )
+    p_parse.add_argument("--upload-id", help="Parse a pre-uploaded file by upload ID")
 
     # --- Parse Upload ---
     p_parse_upload = subparsers.add_parser(
         "parse-upload", help="Upload a file for two-step parsing"
     )
-    p_parse_upload.add_argument("upload_id", help="Upload ID (client-chosen unique string)")
+    p_parse_upload.add_argument(
+        "upload_id", help="Upload ID (client-chosen unique string)"
+    )
     p_parse_upload.add_argument(
         "--file", required=True, help="Path to the file to upload"
     )

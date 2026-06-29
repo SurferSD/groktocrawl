@@ -173,6 +173,7 @@ class ScraperClient:
         url: str,
         generic_timeout: float = 20.0,
         browser_timeout: float = 45.0,
+        scrape_options: dict | None = None,
     ) -> dict:
         """Try generic scrape first, fall back to browser-tier on failure/empty.
 
@@ -184,7 +185,7 @@ class ScraperClient:
         # ── Try generic (fast path) ───────────────────────────
         try:
             result = await _asyncio.wait_for(
-                self.scrape(url, force_browser=False),
+                self.scrape(url, force_browser=False, scrape_options=scrape_options),
                 timeout=generic_timeout,
             )
             if (
@@ -202,7 +203,7 @@ class ScraperClient:
         # ── Try browser (slow path, longer timeout) ────────────
         try:
             result = await _asyncio.wait_for(
-                self.scrape(url, force_browser=True),
+                self.scrape(url, force_browser=True, scrape_options=scrape_options),
                 timeout=browser_timeout,
             )
             if (

@@ -167,6 +167,7 @@ async def _run_multi_query_discover_and_scrape(
     searxng: SearXNGClient,
     scraper: ScraperClient,
     max_searches_per_request: int = 5,
+    scrape_options: dict | None = None,
 ) -> dict:
     """Search multiple sub-queries, deduplicate URLs, scrape, and merge context.
 
@@ -234,6 +235,7 @@ async def _run_multi_query_discover_and_scrape(
         scraper,
         min_sources=3,
         max_attempts=len(preferred) or 10,
+        scrape_options=scrape_options,
     )
     logger.info(
         "Multi-query: scraped %d docs from %d preferred URLs (attempts=%d)",
@@ -249,6 +251,7 @@ async def _run_multi_query_discover_and_scrape(
             scraper,
             min_sources=remaining,
             max_attempts=remaining * 2,
+            scrape_options=scrape_options,
         )
         documents.extend(extra_docs)
         source_details.extend(extra_details)
@@ -270,6 +273,7 @@ async def _run_research_discover_and_scrape(
     searxng: SearXNGClient,
     scraper: ScraperClient,
     max_searches_per_request: int = 5,
+    scrape_options: dict | None = None,
 ) -> dict:
     """Search → filter → scrape → context-building phase for research.
 
@@ -295,6 +299,7 @@ async def _run_research_discover_and_scrape(
         scraper,
         min_sources=3,
         max_attempts=len(preferred) or 10,
+        scrape_options=scrape_options,
     )
     logger.info(
         "run_research: scraped %d docs from %d preferred URLs (attempts=%d)",
@@ -310,6 +315,7 @@ async def _run_research_discover_and_scrape(
             scraper,
             min_sources=remaining,
             max_attempts=remaining * 2,
+            scrape_options=scrape_options,
         )
         documents.extend(extra_docs)
         source_details.extend(extra_details)
@@ -336,6 +342,7 @@ async def run_research(
     llm_model: str = "gpt-4o-mini",
     requested_model: str | None = None,
     max_searches_per_request: int = 5,
+    include_images: bool = False,
 ) -> dict:
     """Execute the research loop: plan → search → scrape → think → answer.
 
@@ -355,6 +362,9 @@ async def run_research(
         else llm_model
     )
     llm = LLMClient(llm_base_url, llm_api_key, effective_model)
+    scrape_opts: dict | None = (
+        {"formats": ["markdown", "images"]} if include_images else None
+    )
 
     try:
         pass_count = 0
@@ -381,6 +391,7 @@ async def run_research(
                         searxng=searxng,
                         scraper=scraper,
                         max_searches_per_request=max_searches_per_request,
+                        scrape_options=scrape_opts,
                     )
                 else:
                     query = queries[0] if queries else prompt
@@ -389,6 +400,7 @@ async def run_research(
                         urls=urls,
                         searxng=searxng,
                         scraper=scraper,
+                        scrape_options=scrape_opts,
                     )
             else:
                 # ── Pass 2: gap-focused discovery ─────────────────
@@ -400,6 +412,7 @@ async def run_research(
                     max_searches_per_request=min(
                         len(gap_topics), max_searches_per_request
                     ),
+                    scrape_options=scrape_opts,
                 )
 
             context = discovered["context"]
@@ -468,6 +481,7 @@ async def run_research_stream(
     llm_model: str = "gpt-4o-mini",
     requested_model: str | None = None,
     max_searches_per_request: int = 5,
+    include_images: bool = False,
 ) -> AsyncGenerator[dict[str, Any], None]:
     """Streaming version of run_research. Yields SSE-suitable dicts.
 
@@ -495,6 +509,9 @@ async def run_research_stream(
         else llm_model
     )
     llm = LLMClient(llm_base_url, llm_api_key, effective_model)
+    scrape_opts: dict | None = (
+        {"formats": ["markdown", "images"]} if include_images else None
+    )
 
     try:
         # Phase 0: Query Intelligence — analyze prompt, generate research plan
@@ -537,6 +554,7 @@ async def run_research_stream(
                         searxng=searxng,
                         scraper=scraper,
                         max_searches_per_request=max_searches_per_request,
+                        scrape_options=scrape_opts,
                     )
                 else:
                     query = queries[0] if queries else prompt
@@ -545,6 +563,7 @@ async def run_research_stream(
                         urls=urls,
                         searxng=searxng,
                         scraper=scraper,
+                        scrape_options=scrape_opts,
                     )
             else:
                 # ── Pass 2: gap-focused discovery ────────────────────
@@ -556,6 +575,7 @@ async def run_research_stream(
                     max_searches_per_request=min(
                         len(gap_topics), max_searches_per_request
                     ),
+                    scrape_options=scrape_opts,
                 )
 
             search_results = discovered["search_results"]
@@ -834,8 +854,7 @@ async def run_enrich_pipeline(
 
                 # LLM extraction
                 field_descriptions = "\n".join(
-                    f"- {name}: {field.description}"
-                    for name, field in fields.items()
+                    f"- {name}: {field.description}" for name, field in fields.items()
                 )
                 extract_prompt = (
                     "Extract the following fields from the text below.\n"
@@ -908,12 +927,15 @@ def _parse_enrich_json(text: str) -> dict:
 
     logger.warning("Enrich: failed to parse LLM JSON response")
     return {}
+
+
 async def _scrape_urls(
     urls: list[str],
     scraper: ScraperClient,
     min_sources: int = 3,
     max_attempts: int | None = None,
     max_concurrent: int = 5,
+    scrape_options: dict | None = None,
 ) -> tuple[list[str], list[dict]]:
     """Scrape URLs with bounded concurrency and return (documents, source_details).
 
@@ -935,7 +957,8 @@ async def _scrape_urls(
             try:
                 logger.info("Scraping: %s", url)
                 result = await asyncio.wait_for(
-                    scraper.scrape_with_fallback(url), timeout=url_timeout
+                    scraper.scrape_with_fallback(url, scrape_options=scrape_options),
+                    timeout=url_timeout,
                 )
                 if result.get("success") and result.get("data", {}).get("markdown"):
                     md = result["data"]["markdown"]
@@ -2203,7 +2226,6 @@ async def run_find_similar(
     Dispatches to the appropriate mode based on ``search_mode``.
     Returns a list of dicts with url, title, description.
     """
-    from .models import SearchResult
 
     if search_mode == "web":
         results = await _run_find_similar_web(
@@ -2233,7 +2255,6 @@ async def _run_find_similar_qdrant(
 ) -> list[dict]:
     """Find similar pages by scraping a URL, embedding its content,
     and searching the local Qdrant vector index."""
-    from .models import SearchResult
     from .semantic_client import SemanticClient
 
     scraper = ScraperClient(scraper_url)
@@ -2279,7 +2300,6 @@ async def _run_find_similar_web(
     searching the open web, and reranking by cosine similarity."""
     import math
 
-    from .models import SearchResult
     from .semantic_client import SemanticClient
 
     scraper = ScraperClient(scraper_url)
@@ -2298,9 +2318,7 @@ async def _run_find_similar_web(
             return []
 
         # 2. Extract key terms from content (title + first paragraph)
-        first_para = (
-            markdown.split("\n\n")[0] if "\n\n" in markdown else markdown[:500]
-        )
+        first_para = markdown.split("\n\n")[0] if "\n\n" in markdown else markdown[:500]
         keywords = f"{title} {first_para}"
 
         # 3. Search the web with key terms (fetch extra for reranking headroom)
@@ -2322,9 +2340,7 @@ async def _run_find_similar_web(
             }
             for r in results_list[: limit * 2]
         ]
-        texts_to_embed = [
-            f"{c['title']} {c['description']}" for c in candidates
-        ]
+        texts_to_embed = [f"{c['title']} {c['description']}" for c in candidates]
         if not texts_to_embed:
             return []
 
@@ -2332,9 +2348,7 @@ async def _run_find_similar_web(
 
         # 6. Rank by cosine similarity
         scored = []
-        for i, (candidate, emb) in enumerate(
-            zip(candidates, candidate_embeddings)
-        ):
+        for i, (candidate, emb) in enumerate(zip(candidates, candidate_embeddings)):
             dot = sum(a * b for a, b in zip(query_embedding, emb))
             norm_q = math.sqrt(sum(a * a for a in query_embedding))
             norm_c = math.sqrt(sum(b * b for b in emb))
@@ -2356,6 +2370,8 @@ async def _run_find_similar_web(
         await scraper.close()
         await semantic.close()
         await searxng.close()
+
+
 async def run_search_stream(
     query: str,
     limit: int = 5,
@@ -2525,12 +2541,8 @@ async def run_search_stream(
                     return
                 async with semaphore:
                     try:
-                        resp = await asyncio.wait_for(
-                            scraper.scrape(url), timeout=20
-                        )
-                        if resp.get("success") and resp.get("data", {}).get(
-                            "markdown"
-                        ):
+                        resp = await asyncio.wait_for(scraper.scrape(url), timeout=20)
+                        if resp.get("success") and resp.get("data", {}).get("markdown"):
                             md = resp["data"]["markdown"][:3000]
                             await queue.put(
                                 {
@@ -2559,9 +2571,7 @@ async def run_search_stream(
                         }
                     )
 
-            tasks = [
-                asyncio.create_task(_scrape_and_queue(r)) for r in top_results
-            ]
+            tasks = [asyncio.create_task(_scrape_and_queue(r)) for r in top_results]
 
             completed_count = 0
             while completed_count < len(tasks):

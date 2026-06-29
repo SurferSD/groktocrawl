@@ -50,6 +50,8 @@ from .models import (
     ExtractStatusResponse,
     FindSimilarRequest,
     FindSimilarResponse,
+    ImageData,
+    ImageSearchResult,
     LLMsTextCreateResponse,
     LLMsTextRequest,
     LLMsTextStatusResponse,
@@ -144,6 +146,9 @@ async def scrape(request: Request, body: ScrapeRequest) -> ScrapeResponse:
                 markdown=scraper_data.get("markdown", ""),
                 metadata=scraper_data.get("metadata")
                 or {"source": scraper_data.get("source", "unknown")},
+                images=[ImageData(**img) for img in scraper_data.get("images", [])]
+                if scraper_data.get("images")
+                else None,
             ),
         )
     raise ScrapeError(detail=result.get("error", "Scrape failed"))
@@ -217,6 +222,7 @@ async def create_agent(request: Request, body: AgentRequest, response: Response)
                 llm_model=request.app.state.llm_model,
                 requested_model=body.model if body.model != "default" else None,
                 max_searches_per_request=max_searches,
+                include_images=body.include_images,
             ):
                 import json
 
@@ -272,6 +278,7 @@ async def create_agent(request: Request, body: AgentRequest, response: Response)
             scraper_url=request.app.state.scraper_url,
             webhook_config=body.webhook,
             requested_model=body.model,
+            include_images=body.include_images,
         )
     )
 
@@ -986,6 +993,61 @@ async def search(request: Request, body: SearchRequest) -> SearchResponse:
 
     searxng = SearXNGClient(request.app.state.searxng_url)
     try:
+        # ── Determine which source types to query ──────────────────
+        has_image_source = body.sources and "images" in body.sources
+        has_non_image_sources = body.sources and any(
+            s != "images" for s in body.sources
+        )
+        image_only = has_image_source and not has_non_image_sources
+
+        # ── Image search (when sources includes "images") ─────────
+        image_results: list[ImageSearchResult] = []
+        if has_image_source:
+            image_query_results, _img_health = await searxng.search(
+                body.query,
+                limit=body.limit,
+                sources=["images"],
+            )
+            for pos, item in enumerate(image_query_results):
+                resolution_str = item.get("description", "")
+                width = None
+                height = None
+                # Try to parse resolution like "800 × 600" or "800x600"
+                res_match = (
+                    __import__("re").match(r"(\d+)\s*[×x]\s*(\d+)", resolution_str)
+                    if resolution_str
+                    else None
+                )
+                if res_match:
+                    width = int(res_match.group(1))
+                    height = int(res_match.group(2))
+                image_results.append(
+                    ImageSearchResult(
+                        title=item.get("title", ""),
+                        image_url=item.get("url", ""),
+                        image_width=width,
+                        image_height=height,
+                        url=item.get("url", ""),
+                        position=pos + 1,
+                    )
+                )
+
+        if image_only:
+            data: dict[str, list] = {
+                "web": [],
+                "images": [r.model_dump() for r in image_results],
+                "news": [],
+            }
+            return SearchResponse(data=data)
+
+        # ── Non-image sources: standard SearXNG path ──────────────
+        # Determine effective sources/categories for the main query
+        effective_sources = (
+            [s for s in body.sources if s != "images"]
+            if body.sources and has_image_source
+            else body.sources
+        )
+
         # Deep mode: multi-pass search with gap analysis and follow-up queries
         if body.search_type == "deep":
             from .research import run_deep_search
@@ -1031,7 +1093,7 @@ async def search(request: Request, body: SearchRequest) -> SearchResponse:
                     body.query,
                     limit=body.limit,
                     categories=body.categories,
-                    sources=body.sources,
+                    sources=effective_sources,
                 )
                 # Query vector index in parallel (async would be better, but sequential for now)
                 vector_results = await semantic.search_vector(
@@ -1070,7 +1132,7 @@ async def search(request: Request, body: SearchRequest) -> SearchResponse:
                 body.query,
                 limit=body.limit,
                 categories=body.categories,
-                sources=body.sources,
+                sources=effective_sources,
             )
             search_results = [
                 SearchResult(
@@ -1145,13 +1207,17 @@ async def search(request: Request, body: SearchRequest) -> SearchResponse:
                 await scraper.close()
 
         # Route results to the correct top-level key based on sources filter
-        data = {"web": [], "images": [], "news": []}
-        if body.sources:
-            for src in body.sources:
+        data: dict[str, list] = {"web": [], "images": [], "news": []}
+        if effective_sources:
+            for src in effective_sources:
                 if src in data:
-                    data[src] = search_results
+                    data[src] = [r.model_dump() for r in search_results]
         else:
-            data["web"] = search_results
+            data["web"] = [r.model_dump() for r in search_results]
+
+        # Merge image results if sources included "images"
+        if image_results:
+            data["images"] = [r.model_dump() for r in image_results]
 
         # Rich mode: scrape results and synthesize enriched content
         output = None
