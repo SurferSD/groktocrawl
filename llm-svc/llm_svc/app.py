@@ -14,79 +14,6 @@ from common.middleware import add_request_id_middleware
 
 logger = logging.getLogger(__name__)
 
-# Sentinel mark used by agent-svc LLM client when injecting schema into system prompt
-_SCHEMA_MARKER = "MUST respond with valid JSON matching this schema:"
-
-
-def _resolve_type(prop_schema: dict) -> str:
-    """Return the canonical type string for a property schema.
-
-    Handles single type (``"string"``), type arrays (``["string","null"]``),
-    and missing type (default ``"string"``).
-    """
-    t = prop_schema.get("type", "string")
-    if isinstance(t, list):
-        # Pick the first non-null type
-        for item in t:
-            if item != "null":
-                return item
-        return "string"
-    return t
-
-
-def _dummy_value(prop_schema: dict) -> object:
-    """Build a dummy value that satisfies *prop_schema*."""
-    t = _resolve_type(prop_schema)
-
-    if t == "string":
-        if "enum" in prop_schema:
-            return prop_schema["enum"][0]
-        return "value"
-
-    if t == "array":
-        item_schema = prop_schema.get("items", {"type": "string"})
-        return [_dummy_value(item_schema), _dummy_value(item_schema)]
-
-    if t == "object":
-        obj = {}
-        for key, subschema in prop_schema.get("properties", {}).items():
-            if key in prop_schema.get("required", []):
-                obj[key] = _dummy_value(subschema)
-        return obj
-
-    if t in ("integer", "number"):
-        return 42
-
-    if t == "boolean":
-        return True
-
-    # Fallback
-    return "value"
-
-
-def _generate_schema_response(system_text: str) -> str:
-    """Generate a JSON response conforming to the schema embedded in *system_text*.
-
-    The LLM client injects the schema after :data:`_SCHEMA_MARKER` followed
-    by a newline and then the pretty-printed JSON Schema.
-    """
-    try:
-        idx = system_text.index(_SCHEMA_MARKER)
-        schema_json = system_text[idx + len(_SCHEMA_MARKER):].strip()
-        schema = json.loads(schema_json)
-    except (ValueError, json.JSONDecodeError):
-        return json.dumps({"result": "FALLBACK-v2-marker"})
-
-    if schema.get("type") != "object" or "properties" not in schema:
-        return json.dumps({"result": "FALLBACK-v2-schema"})
-
-    response: dict = {}
-    for key, prop in schema.get("properties", {}).items():
-        if key in schema.get("required", []):
-            response[key] = _dummy_value(prop)
-
-    return json.dumps(response)
-
 
 class ChatMessage(BaseModel):
     role: str
@@ -163,7 +90,7 @@ def create_app() -> FastAPI:
                     }
                 )
             else:
-                content = _generate_schema_response(system_text)
+                content = json.dumps({"result": "structured response"})
         else:
             content = "Synthesized answer from provided context."
         return {
