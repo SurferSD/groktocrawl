@@ -75,10 +75,10 @@ def _generate_schema_response(system_text: str) -> str:
         schema_json = system_text[idx + len(_SCHEMA_MARKER):].strip()
         schema = json.loads(schema_json)
     except (ValueError, json.JSONDecodeError):
-        return json.dumps({"result": "FALLBACK: marker not found or invalid JSON"})
+        return json.dumps({"result": "structured response"})
 
     if schema.get("type") != "object" or "properties" not in schema:
-        return json.dumps({"result": "FALLBACK: schema not object or no properties"})
+        return json.dumps({"result": "structured response"})
 
     response: dict = {}
     for key, prop in schema.get("properties", {}).items():
@@ -138,8 +138,6 @@ def create_app() -> FastAPI:
     async def chat_completions(req: ChatCompletionRequest):
         user_text = "\n".join(m.content for m in req.messages if m.role == "user")
         system_text = "\n".join(m.content for m in req.messages if m.role == "system")
-
-        logger.info("FIXTURE-V2-DEPLOYED: processing request")
 
         if req.response_format and req.response_format.get("type") == "json_object":
             # Handle recovery prompts — extract iframe URLs from page content
