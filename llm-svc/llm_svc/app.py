@@ -139,6 +139,8 @@ def create_app() -> FastAPI:
         user_text = "\n".join(m.content for m in req.messages if m.role == "user")
         system_text = "\n".join(m.content for m in req.messages if m.role == "system")
 
+        logger.info("FIXTURE-V2-DEPLOYED: processing request")
+
         if req.response_format and req.response_format.get("type") == "json_object":
             # Handle recovery prompts — extract iframe URLs from page content
             iframe_match = re.search(r'<iframe[^>]+src="([^"]+)"', user_text)
