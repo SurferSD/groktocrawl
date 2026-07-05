@@ -75,10 +75,10 @@ def _generate_schema_response(system_text: str) -> str:
         schema_json = system_text[idx + len(_SCHEMA_MARKER):].strip()
         schema = json.loads(schema_json)
     except (ValueError, json.JSONDecodeError):
-        return json.dumps({"result": "structured response"})
+        return json.dumps({"result": "FALLBACK: marker not found or invalid JSON"})
 
     if schema.get("type") != "object" or "properties" not in schema:
-        return json.dumps({"result": "structured response"})
+        return json.dumps({"result": "FALLBACK: schema not object or no properties"})
 
     response: dict = {}
     for key, prop in schema.get("properties", {}).items():
