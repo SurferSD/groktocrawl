@@ -7556,7 +7556,7 @@ def test_deepen_valid_ref_after_search_val_dpn_001():
     # Scrape the URL so the ref has content for deep
     s1b = httpx.post(
         AGENT + f"/v2/session/{sid}/step",
-        json={"action": "scrape", "params": {"url": target_url}},
+        json={"action": "scrape", "params": {"urls": [target_url]}},
         timeout=60,
     )
     assert s1b.status_code == 200, f"Scrape step failed: {s1b.status_code} {s1b.text}"
@@ -7729,7 +7729,7 @@ def test_deepen_new_refs_with_indices_val_dpn_005():
     # Scrape the URL so the ref has content for deepen
     s1b = httpx.post(
         AGENT + f"/v2/session/{sid}/step",
-        json={"action": "scrape", "params": {"url": target_url}},
+        json={"action": "scrape", "params": {"urls": [target_url]}},
         timeout=60,
     )
     assert s1b.status_code == 200, f"Scrape step failed: {s1b.status_code} {s1b.text}"
