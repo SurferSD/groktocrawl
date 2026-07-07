@@ -34,7 +34,7 @@ Critical
    ```bash
    docker compose logs agent-svc --tail=200 | grep -i "error\|failed\|exception"
    ```
-2. **Correlate with dependency health** — check if upstream services (scraper-svc, search-svc, llm-svc) are healthy:
+2. **Correlate with dependency health** — check if upstream services (scraper-svc, llm-svc) are healthy:
    ```bash
    docker compose ps
    curl -s http://localhost:8001/health  # scraper-svc

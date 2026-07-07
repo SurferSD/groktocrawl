@@ -72,7 +72,6 @@ flowchart TD
         end
 
         subgraph fixtures["Fixture Services"]
-            search[("search-svc<br/>(local search index)")]
             llm[("llm-svc<br/>(LLM mock)")]
             test_site[("test-site<br/>(test website)")]
         end
@@ -83,7 +82,6 @@ flowchart TD
         end
 
         valkey --- agent
-        search --- agent
         scraper --- agent
         llm --- agent
         test_site --- scraper
@@ -93,7 +91,6 @@ flowchart TD
     llm -.->|LLM_BASE_URL + LLM_API_KEY| agent
 
     style valkey fill:#ffe0b0,stroke:#d4a050,color:#333
-    style search fill:#b0d4ff,stroke:#5090d4,color:#333
     style llm fill:#b0d4ff,stroke:#5090d4,color:#333
     style test_site fill:#b0d4ff,stroke:#5090d4,color:#333
     style scraper fill:#b0ffb0,stroke:#50d050,color:#333
@@ -107,7 +104,6 @@ flowchart TD
 |-----------|-----------|---------|
 | `agent-svc` | python:3.13-slim | FastAPI server + async research worker. Core application logic. |
 | `scraper-svc` | python:3.13-slim + playwright | URL → markdown. Three-tier fetch strategy (llms.txt → Accept: markdown → Playwright). |
-| `search-svc` | python:3.13-slim | Local search fixture. Replaceable with SearXNG. |
 | `llm-svc` | python:3.13-slim | Deterministic OpenAI-compatible LLM fixture. Replaceable with any LLM endpoint. |
 | `valkey` | valkey/valkey:8-alpine | Job queue backend (future: persistent queue). |
 | `test-site` | python:3.13-slim | Fixture website for integration tests. |
@@ -142,7 +138,6 @@ groktocrawl/
 │       ├── app.py            # FastAPI, single /scrape endpoint
 │       ├── fetch.py          # Three-tier fetch strategy
 │       └── extract.py        # HTML → markdown conversion
-├── search-svc/               # Local search fixture
 ├── llm-svc/                  # OpenAI-compatible LLM fixture
 ├── test-site/                # Fixture website for integration tests
 ├── tests/

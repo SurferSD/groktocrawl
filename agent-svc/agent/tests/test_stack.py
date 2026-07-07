@@ -10,7 +10,6 @@ logger = logging.getLogger(__name__)
 
 AGENT = os.getenv("AGENT_BASE_URL", "http://localhost:8080")
 SCRAPER = os.getenv("SCRAPER_BASE_URL", "http://localhost:8001")
-SEARCH = os.getenv("SEARCH_BASE_URL", "http://localhost:8010")
 LLM = os.getenv("LLM_BASE_URL", "http://localhost:8011")
 TEST_SITE = os.getenv("TEST_SITE_BASE_URL", "http://localhost:8005")
 TIER3_SITE = os.getenv("TIER3_FIXTURE_BASE_URL", "http://localhost:8006")
@@ -56,7 +55,6 @@ def wait_for(url: str, path: str = "/health", timeout_s: int = 120):
 def test_services_health():
     assert wait_for(AGENT).json()["status"] == "ok"
     assert wait_for(SCRAPER).json()["status"] == "ok"
-    assert wait_for(SEARCH).json()["status"] == "ok"
 
 
 def test_scraper_health_reports_playwright():

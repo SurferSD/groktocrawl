@@ -77,7 +77,6 @@ The `--profile fixture` flag starts test helper services (`llm-svc` for a built-
 - `browser-svc/` — headless Playwright browser sessions
 - `semantic-svc/` — vector indexing and near-duplicate detection (Qdrant)
 - `portal-svc/` — web UI for human users
-- `search-svc/` — search fixture for local testing (replaceable with SearXNG or SlopSearX)
 - `llm-svc/` — LLM fixture for local testing (replaceable with any OpenAI-compatible backend)
 - `test-site/` — fixture website for integration tests
 - `tests/` — integration tests
