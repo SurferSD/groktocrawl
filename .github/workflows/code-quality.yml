@@ -44,8 +44,8 @@ jobs:
 
       - name: Run mypy (type checking)
         run: |
-          PYTHONPATH=agent-svc:scraper-svc:search-svc:llm-svc:parse-svc:portal-svc:browser-svc:. \
-          mypy agent-svc/agent scraper-svc/scraper search-svc/search_svc \
+          PYTHONPATH=agent-svc:scraper-svc:llm-svc:parse-svc:portal-svc:browser-svc:. \
+          mypy agent-svc/agent scraper-svc/scraper \
                llm-svc/llm_svc parse-svc/parse_svc portal-svc/portal \
                browser-svc/browser_svc semantic-svc common/
 

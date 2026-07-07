@@ -31,7 +31,7 @@ jobs:
 
       - name: Audit each service's dependency tree
         run: |
-          services="agent-svc scraper-svc search-svc llm-svc parse-svc portal-svc browser-svc semantic-svc"
+          services="agent-svc scraper-svc llm-svc parse-svc portal-svc browser-svc semantic-svc"
           failed=0
           for svc in $services; do
             echo "=== $svc ==="
