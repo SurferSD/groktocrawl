@@ -97,7 +97,7 @@ The SearXNG JSON API is the contract, not SearXNG itself. By replacing the imple
 
 SlopSearX was built for exactly this use case: a minimal, focused search backend that speaks the SearXNG JSON API and nothing else. It strips away the UI, preferences, admin panel, and engine management that SearXNG carries — all features that GroktoCrawl never used.
 
-## Impact
+## Consequences
 
 ### Positive
 
