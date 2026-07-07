@@ -25,7 +25,7 @@ Critical
    ```bash
    curl -s http://localhost:8080/health
    ```
-   Look for any dependency in a non-ok state (valkey, searxng, scraper, browser, portal).
+   Look for any dependency in a non-ok state (valkey, slopsearx, scraper, browser, portal).
 5. **Pause job processing** if needed by setting the `FEATURE_AGENT_ENABLED` toggle to `false` and restarting agent-svc.
 
 ## Investigation Steps

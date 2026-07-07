@@ -11,7 +11,7 @@ flowchart LR
     semantic_svc("Semantic Service\n[BGE-M3 / Reranker]\nPort 8003 (internal)")
     qdrant("Qdrant\n[Vector DB]")
     valkey("Valkey\n[Key-Value Store]")
-    searxng("SearXNG\n[Search Engine]")
+    searxng("SlopSearX\n[Search Engine]")
     llm_svc("LLM Service\n[OpenAI Compatible]")
     flare_solverr("FlareSolverr\n[Cloudflare Solver]")
     portal_svc("Portal Service\n[Web UI] Port 8082")
@@ -54,7 +54,7 @@ flowchart LR
         worker["Async Worker\nworker.py"]
         research["Research Agent\nresearch.py"]
         scraper_client["Scraper Client\nscraper_client.py"]
-        searxng_client["SearXNG Client\nsearxng_client.py"]
+        searxng_client["SearXNG API Client\nsearxng_client.py"]
         semantic_client["Semantic Client\nsemantic_client.py"]
         webhook["Webhook Deliverer\nwebhook.py"]
     end
@@ -102,26 +102,26 @@ GroktoCrawl supports five retrieval modes, controlled by the `retrieval_mode` fi
 
 | Mode | Pipeline | Latency | Phase |
 |---|---|---|---|
-| `keyword` | SearXNG only | <1s | — |
-| `semantic` | SearXNG → scrape → BGE-M3 embed → cosine rerank | 1–30s | Phase 1 |
-| `hybrid` | SearXNG → scrape → cross-encoder merge | 2–40s | Phase 1 |
+| `keyword` | SlopSearX only | <1s | — |
+| `semantic` | SlopSearX → scrape → BGE-M3 embed → cosine rerank | 1–30s | Phase 1 |
+| `hybrid` | SlopSearX → scrape → cross-encoder merge | 2–40s | Phase 1 |
 | `vector` | Qdrant only → embed query → vector search | <1s | Phase 2 |
-| `hybrid_vector` | SearXNG + Qdrant parallel → merge → dedup by URL | 1–30s | Phase 2 |
+| `hybrid_vector` | SlopSearX + Qdrant parallel → merge → dedup by URL | 1–30s | Phase 2 |
 
 ```mermaid
 flowchart TD
     Q[User Query]
     Q --> M{retrieval_mode}
-    M -->|keyword| SRX[SearXNG]
-    M -->|semantic| SRX2[SearXNG] --> SCR2[Scrape] --> EMB2[BGE-M3 Embed] --> COS[Cosine Rerank]
-    M -->|hybrid| SRX3[SearXNG] --> SCR3[Scrape] --> XENC[Cross-Encoder Merge]
+    M -->|keyword| SRX[SlopSearX]
+    M -->|semantic| SRX2[SlopSearX] --> SCR2[Scrape] --> EMB2[BGE-M3 Embed] --> COS[Cosine Rerank]
+    M -->|hybrid| SRX3[SlopSearX] --> SCR3[Scrape] --> XENC[Cross-Encoder Merge]
     M -->|vector| EMB4[BGE-M3 Embed Query] --> QDR4[(Qdrant Search)]
     M -->|hybrid_vector| PAR{Parallel}
-    PAR --> SRX5[SearXNG]
+    PAR --> SRX5[SlopSearX]
     PAR --> EMB5[BGE-M3 Embed] --> QDR5[(Qdrant)]
     SRX5 --> MERGE[Merge + URL Dedup]
     QDR5 --> MERGE
-    
+
     SRX --> RESP[Results]
     COS --> RESP
     XENC --> RESP
