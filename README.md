@@ -13,7 +13,7 @@ docker compose --profile fixture up --build -d
 
 Eight containers start. Add `--profile fixture` to also start a built-in LLM fixture and test site — useful for evaluation without an API key. Omit it for production (configure a real LLM in `.env` instead).
 
-The stack includes a SearXNG-compatible search service, a smart scraper, and an Ofelia-scheduled monitor system.
+The stack includes a SlopSearX-compatible search service, a smart scraper, and an Ofelia-scheduled monitor system.
 
 ```bash
 # CLI
@@ -122,7 +122,7 @@ python3 -m pip install requests
 ./groktocrawl scrape <url>                      # Scrape a page to markdown
 ./groktocrawl search <query> --limit 5          # Search the web (default: general)
 ./groktocrawl search <query> --sources news     # Search news sources only
-./groktocrawl search <query> --categories research  # Search with content category (mapped to SearXNG)
+./groktocrawl search <query> --categories research  # Search with content category (mapped to SlopSearX)
 ./groktocrawl search <query> --sources news --categories research  # Combined filter
 ./groktocrawl map <url> --limit 100             # Discover URLs on a site
 ./groktocrawl crawl <url> --max-depth 2         # Crawl a website
@@ -192,9 +192,9 @@ All Firecrawl v2 API-compatible in request/response shape.
 | `extras` | `object` | Dict with `links`, `imageLinks`, `codeBlocks` (max count each) |
 
 Section categories for `include`/`exclude`: `header`, `navigation`, `banner`, `body`, `sidebar`, `footer`, `metadata`.
-Both `sources` and `categories` are translated to SearXNG-native categories and can be combined:
+Both `sources` and `categories` are translated to SlopSearX-native categories and can be combined:
 
-| Firecrawl value | Mapped to SearXNG |
+| Firecrawl value | Mapped to SlopSearX |
 |----------------|-------------------|
 | `sources=news` | `categories=news` |
 | `sources=images` | `categories=images` |
@@ -203,7 +203,7 @@ Both `sources` and `categories` are translated to SearXNG-native categories and 
 | `categories=github` | `categories=it` |
 | `categories=pdf` | `categories=general` |
 
-Unknown values pass through to SearXNG as-is for forward compatibility. When neither
+Unknown values pass through to SlopSearX as-is for forward compatibility. When neither
 `sources` nor `categories` is specified, defaults to `general`.
 
 Results are grouped by source type in the response:

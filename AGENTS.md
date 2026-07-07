@@ -74,10 +74,10 @@ The agent service uses an OpenAI-compatible client. Swap the provider by changin
 
 **System prompt:** The agent's research behavior is defined by `SYSTEM_PROMPT` and `EXTRACT_SYSTEM_PROMPT` constants in `research.py`. These are fixed — not configurable at runtime. They instruct the LLM to evaluate source quality, synthesize across pages, detect contradictions, and cite sources.
 
-**Search parameters:** `POST /v2/search` accepts Firecrawl v2 `sources` and `categories` dimensions alongside `query` and `limit`. These are translated to SearXNG categories — see `searxng_client.py` for the translation maps and `docs/adr/0013-search-architecture-with-vertical-categories.md` for the architecture.
+**Search parameters:** `POST /v2/search` accepts Firecrawl v2 `sources` and `categories` dimensions alongside `query` and `limit`. These are translated to SlopSearX categories — see `searxng_client.py` for the translation maps and `docs/adr/0013-search-architecture-with-vertical-categories.md` for the architecture.
 
 **Search type spectrum (v0.6.0):** `POST /v2/search` now accepts `search_type` (default: `fast`):
-- `fast` (<1s): current behavior — raw SearXNG results
+- `fast` (<1s): current behavior — raw SlopSearX results
 - `rich` (1-3s): scrapes top results and enriches with LLM synthesis
 
 Optional `output_schema` enables structured extraction from search results (single-call: search → scrape → extract). Optional `system_prompt` guides synthesis behavior. See `docs/adr/0023-search-type-spectrum-fast-and-rich.md`. The CLI exposes `--search-type` (fast/rich), `--output-schema` (JSON string or @file.json), and `--system-prompt` flags alongside existing `--sources` and `--categories`.

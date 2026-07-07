@@ -279,6 +279,6 @@ None of that is inherent to the *problem* of "given a prompt, find information o
 3. Think about what you found
 4. Answer the prompt
 
-We have open-source tools for steps 1 and 2 (SearXNG, Playwright). We have a commodity API for step 3 (any LLM). Step 4 is just formatting.
+We have open-source tools for steps 1 and 2 (SlopSearX, Playwright). We have a commodity API for step 3 (any LLM). Step 4 is just formatting.
 
 The complexity of the big scraper companies comes from scale, not from the core capability. Scale is a great problem to have, but it's not our problem. Our job is to make the capability accessible with `docker compose up`.
