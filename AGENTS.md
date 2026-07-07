@@ -35,7 +35,6 @@ groktocrawl/
 │       ├── fetch.py    # Three-tier fetch strategy (+ adapter dispatch)
 │       ├── extract.py  # HTML → markdown conversion + content quality gates (ADR-0016)
 │       └── adapters/   # Site-specific content handlers (auto-registered)
-├── search-svc/         # Search fixture for local testing
 ├── llm-svc/            # LLM fixture for local testing
 ├── test-site/          # Fixture website for integration tests
 ├── tests/

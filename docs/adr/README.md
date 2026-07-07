@@ -31,7 +31,7 @@ An Architecture Decision Record captures an important architectural decision mad
 | 0010 | [Five-Tier Scraper Pipeline with LLM Recovery](0010-five-tier-scraper-with-llm-recovery.md) | accepted |
 | 0011 | [Stealth Playwright Configuration](0011-stealth-playwright-configuration.md) | accepted |
 | 0012 | [Webhook Delivery for Async Endpoints](0012-webhook-delivery-for-async-endpoints.md) | accepted |
-| 0013 | [Search Architecture with Vertical Categories](0013-search-architecture-with-vertical-categories.md) | accepted |
+| 0013 | [Search Architecture with Vertical Categories](0013-search-architecture-with-vertical-categories.md) | superseded by ADR-0043 |
 | 0014 | [Binary Content Detection and Download](0014-binary-content-detection-and-download.md) | accepted |
 | 0015 | [Barrier Classification Phase 1](0015-barrier-classification.md) | accepted |
 | 0016 | [Extraction Quality Gates](0016-extraction-quality-gates.md) | accepted |
@@ -61,5 +61,6 @@ An Architecture Decision Record captures an important architectural decision mad
 | 0040 | [Session Protocol — Agent-Native Research Sessions](0040-session-protocol.md) | proposed |
 | 0041 | [Research Memory — Cross-Session Semantic Cache](0041-research-memory.md) | proposed |
 | 0042 | [MCP Server Architecture](0042-mcp-server-architecture.md) | proposed |
+| 0043 | [Migration from SearXNG to SlopSearX](0043-migration-to-slopsearx.md) | accepted |
 
 See [CONTRIBUTING.md](../../CONTRIBUTING.md) for the full ADR workflow: when to write an ADR, how to number it, and how to get it reviewed in a PR.

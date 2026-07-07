@@ -9340,7 +9340,7 @@ def test_session_search_error_resilience_val_ses_074():
     - GET session returns consistent state regardless of step outcomes
 
     The full SearXNG-unreachable scenario requires infrastructure manipulation
-    (stopping search-svc).  This test verifies the resilience contract.
+    (stopping slopsearx).  This test verifies the resilience contract.
     """
     r = httpx.post(AGENT + "/v2/session/create", json={}, timeout=30)
     sid = r.json()["sessionId"]

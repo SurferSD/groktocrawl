@@ -1,6 +1,6 @@
 # Search Architecture with Vertical Categories
 
-* Status: accepted
+* Status: superseded by ADR-0043
 * Deciders: magnus, jasper
 * Date: 2026-06-05
 
