@@ -31,6 +31,7 @@ from .cache import (
 )
 from .extract import assess_quality
 from .metadata import extract_all_metadata
+from .playwright_retry import retry_transient
 from .proxy import (
     SCRAPER_PROXY_URL,
     _get_httpx_proxies,
@@ -228,7 +229,7 @@ async def _playwright_fetch_with_proxy(
                     logger.warning("Substack redirect persisted for %s", url)
 
             # SPA content retry
-            html = await page.content()
+            html = await retry_transient(page.content)
             markdown = html_to_markdown(html) if html else ""
 
             if (
@@ -243,12 +244,13 @@ async def _playwright_fetch_with_proxy(
                         url,
                         len(markdown),
                     )
-                    await page.evaluate(
-                        "window.scrollTo(0, document.body.scrollHeight)"
+                    await retry_transient(
+                        page.evaluate,
+                        "window.scrollTo(0, document.body.scrollHeight)",
                     )
                     await page.wait_for_timeout(3000)
 
-                    html = await page.content()
+                    html = await retry_transient(page.content)
                     markdown = html_to_markdown(html) if html else ""
                     if (
                         markdown
@@ -323,9 +325,11 @@ async def fetch_via_playwright(url: str) -> dict | None:
         try:
             result = await _playwright_fetch_with_proxy(url, pw_proxy)
         except Exception as e:
+            if pw_proxy is None:
+                raise  # re-raise — transient errors surface for classification
             logger.warning(
                 "Proxy (%s) failed for %s: %s",
-                pw_proxy.get("server", "unknown") if pw_proxy else "none",
+                pw_proxy.get("server", "unknown"),
                 url,
                 e,
             )
@@ -350,6 +354,17 @@ async def fetch_via_playwright(url: str) -> dict | None:
     except ImportError:
         logger.warning("Playwright not installed; skipping Tier 3")
     except Exception as e:
+        error_str = str(e)
+        # Classify known Playwright crash signatures
+        if "page is navigating" in error_str or "scrollheight" in error_str.lower():
+            logger.warning("Tier 3 browser crash for %s: %s", url, e)
+            return {
+                "error": f"Browser error: {error_str}",
+                "error_type": "browser_error",
+                "markdown": "",
+                "source": "playwright-error",
+                "url": url,
+            }
         logger.warning("Tier 3 miss for %s: %s", url, e)
     return None
 

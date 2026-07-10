@@ -16,8 +16,6 @@ import logging
 
 import httpx
 
-from curl_cffi import requests as curl_requests
-
 from common.url import extract_domain
 
 from .barrier import (
@@ -28,6 +26,7 @@ from .barrier import (
 )
 from .cache import _is_binary_content_type, _make_download_payload
 from .fetch_quality import html_to_markdown
+from .playwright_retry import retry_transient
 from .proxy import _get_playwright_proxy
 from .settings import load_settings
 
@@ -174,7 +173,7 @@ async def _playwright_fetch_with_proxy(
                     logger.warning("Substack redirect persisted for %s", url)
 
             # SPA content retry
-            html = await page.content()
+            html = await retry_transient(page.content)
             markdown = html_to_markdown(html) if html else ""
 
             if (
@@ -189,12 +188,13 @@ async def _playwright_fetch_with_proxy(
                         url,
                         len(markdown),
                     )
-                    await page.evaluate(
-                        "window.scrollTo(0, document.body.scrollHeight)"
+                    await retry_transient(
+                        page.evaluate,
+                        "window.scrollTo(0, document.body.scrollHeight)",
                     )
                     await page.wait_for_timeout(3000)
 
-                    html = await page.content()
+                    html = await retry_transient(page.content)
                     markdown = html_to_markdown(html) if html else ""
                     if (
                         markdown
@@ -360,9 +360,11 @@ async def fetch_via_playwright(url: str) -> dict | None:
         try:
             result = await _playwright_fetch_with_proxy(url, pw_proxy)
         except Exception as e:
+            if pw_proxy is None:
+                raise  # re-raise so outer handler can classify as browser_error
             logger.warning(
                 "Proxy (%s) failed for %s: %s",
-                pw_proxy.get("server", "unknown") if pw_proxy else "none",
+                pw_proxy.get("server", "unknown"),
                 url,
                 e,
             )
@@ -389,7 +391,7 @@ async def fetch_via_playwright(url: str) -> dict | None:
     except Exception as e:
         error_str = str(e)
         # Classify known Playwright crash signatures
-        if "page is navigating" in error_str or "scrollHeight" in error_str.lower():
+        if "page is navigating" in error_str or "scrollheight" in error_str.lower():
             logger.warning("Tier 3 browser crash for %s: %s", url, e)
             return {
                 "error": f"Browser error: {error_str}",
