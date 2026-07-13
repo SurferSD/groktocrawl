@@ -2,6 +2,48 @@
 
 All notable changes to GroktoCrawl are documented in this file.
 
+## [0.13.0](https://github.com/groktopus/groktocrawl/compare/v0.12.1...v0.13.0) (2026-07-13)
+
+
+### Features
+
+* **agent:** add --search-type flag for research depth control ([f7dd947](https://github.com/groktopus/groktocrawl/commit/f7dd94709b5c1b2860e396734045a6d73896863e))
+* **agent:** add --search-type flag for research depth control ([f7dd947](https://github.com/groktopus/groktocrawl/commit/f7dd94709b5c1b2860e396734045a6d73896863e))
+
+
+### Bug Fixes
+
+* add graceful shutdown with drain timeout to MCP server ([#417](https://github.com/groktopus/groktocrawl/issues/417)) ([3541515](https://github.com/groktopus/groktocrawl/commit/354151517709263fd68c6d5711d8b48cadcee380)), closes [#410](https://github.com/groktopus/groktocrawl/issues/410)
+* add transient Playwright error recovery ([f6f6c71](https://github.com/groktopus/groktocrawl/commit/f6f6c71c3d96e9d84d6869962894145a482922f7))
+* add transient Playwright error recovery ([#412](https://github.com/groktopus/groktocrawl/issues/412)) ([b69efba](https://github.com/groktopus/groktocrawl/commit/b69efba696e652ff2f279e1f6c4ca3db51fb30ea))
+* **agent:** wire search_type through streaming pipeline and SSE plan event ([5345c7e](https://github.com/groktopus/groktocrawl/commit/5345c7e1e652250f0bfa25d14082dbf06f40af62))
+* **agent:** wire search_type through streaming pipeline and SSE plan event ([5345c7e](https://github.com/groktopus/groktocrawl/commit/5345c7e1e652250f0bfa25d14082dbf06f40af62))
+* **agent:** wire search_type through streaming pipeline and SSE plan event ([42e8a5c](https://github.com/groktopus/groktocrawl/commit/42e8a5cba6beec5a6e6c9381e3cb21b61278ded7))
+* align tests with explicit LLM model contract ([cc1bc41](https://github.com/groktopus/groktocrawl/commit/cc1bc41a362fac2547e80e7f2ebed8c6f71d967e))
+* align tests with explicit LLM model contract ([ba775de](https://github.com/groktopus/groktocrawl/commit/ba775de65a88401c9e6cdb5a545c8822d75f4d2c))
+* differentiate Playwright browser errors from generic upstream errors ([#416](https://github.com/groktopus/groktocrawl/issues/416)) ([85dc819](https://github.com/groktopus/groktocrawl/commit/85dc8199275062827ab94a0cd7dc96acedade8e0)), closes [#408](https://github.com/groktopus/groktocrawl/issues/408)
+* document BRAVE_API_KEY and surface search degradation warnings ([#414](https://github.com/groktopus/groktocrawl/issues/414)) ([a9e33c4](https://github.com/groktopus/groktocrawl/commit/a9e33c414e80b8daede21a9f41c0c8cb97223c3b)), closes [#406](https://github.com/groktopus/groktocrawl/issues/406)
+* emit parseable semantic service metrics ([#451](https://github.com/groktopus/groktocrawl/issues/451)) ([1569fca](https://github.com/groktopus/groktocrawl/commit/1569fca06841314bfd19a8104100f4a90f726694))
+* reject unsupported version inferences in research ([10f0c8c](https://github.com/groktopus/groktocrawl/commit/10f0c8c300cade6d6de63001459469ee3ac6f976))
+* reject unsupported version inferences in research ([5cd4a0a](https://github.com/groktopus/groktocrawl/commit/5cd4a0acfdff638011f1de057620464ad713c6a2))
+* remove hardcoded gpt-4o-mini defaults from research modules ([#415](https://github.com/groktopus/groktocrawl/issues/415)) ([0dc1b1e](https://github.com/groktopus/groktocrawl/commit/0dc1b1eedc42f19ef65df43eafe0fa3a89613b35))
+* skip failed results in research memory cache ([609440d](https://github.com/groktopus/groktocrawl/commit/609440d558863d3d6cd3b833e3a89a290d681e17))
+* skip failed results in research memory cache ([0e32c79](https://github.com/groktopus/groktocrawl/commit/0e32c79a470db97d2c32be294d87a476b19eb4ae)), closes [#432](https://github.com/groktopus/groktocrawl/issues/432)
+* support disabling llama.cpp template reasoning ([b3a7912](https://github.com/groktopus/groktocrawl/commit/b3a7912cbeddcb22e962511ef3c3671b480d266b))
+* support disabling llama.cpp template reasoning ([9140613](https://github.com/groktopus/groktocrawl/commit/91406134f361d6f0159ecf8b2a537f223d3925dc))
+* update CLI coverage script to scan routes/ package ([7d2905d](https://github.com/groktopus/groktocrawl/commit/7d2905d1076440fd0bd3a3cd3dbc052f6dba6550))
+* update CLI coverage script to scan routes/ package instead of api.py ([d401e17](https://github.com/groktopus/groktocrawl/commit/d401e17445cbd9d3854147c2f034d2204d49d699))
+* wait for semantic service readiness ([746ee46](https://github.com/groktopus/groktocrawl/commit/746ee46c1a691c3c398c83e415d9302b3e173a0c))
+* wait for semantic service readiness ([37be058](https://github.com/groktopus/groktocrawl/commit/37be05812eacc48f26447f1515f236abdf805f96))
+
+
+### Documentation
+
+* clarify CLI authentication configuration ([a0eca83](https://github.com/groktopus/groktocrawl/commit/a0eca831febb0fa8f0842207add8e5676d1dcc51))
+* clarify CLI authentication configuration ([ab247f7](https://github.com/groktopus/groktocrawl/commit/ab247f7a147165f2438dabb239f14ebd77946ec8))
+* overhaul documentation and add drift checks ([#422](https://github.com/groktopus/groktocrawl/issues/422)) ([8473fdd](https://github.com/groktopus/groktocrawl/commit/8473fdd170e66c9cb3d5f499dd9f31696a1d3bca))
+* verify observability artifact chain ([#449](https://github.com/groktopus/groktocrawl/issues/449)) ([3c13dfc](https://github.com/groktopus/groktocrawl/commit/3c13dfc61293d41a67eca1bf4a5ad8d5ff129c47))
+
 ## [0.12.1](https://github.com/groktopus/groktocrawl/compare/v0.12.0...v0.12.1) (2026-07-06)
 
 
